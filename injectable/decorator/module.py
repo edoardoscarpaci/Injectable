@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ..metadata import _DI_CONFIGURATION_ATTR, ConfigurationMetadata
 
 # ─────────────────────────────────────────────────────────────────
 #  DIModule / @Configuration — Spring-style module grouping
@@ -28,17 +29,6 @@ from __future__ import annotations
 #  Thread safety:  ✅ Safe — @Configuration only stamps a bool on the class.
 #  Async safety:   ✅ Safe — stateless marker, no async state.
 # ─────────────────────────────────────────────────────────────────
-
-_MODULE_ATTR = "__di_module__"
-
-
-def _is_module(cls: type) -> bool:
-    """Return True if *cls* was decorated with @Configuration.
-
-    Uses own __dict__ only — does not walk MRO — so subclasses of a
-    @Configuration class are not treated as modules themselves.
-    """
-    return bool(cls.__dict__.get(_MODULE_ATTR))
 
 
 def Configuration(cls: type) -> type:
@@ -77,5 +67,5 @@ def Configuration(cls: type) -> type:
             def db_pool(self) -> DatabasePool:
                 return DatabasePool(self._settings.db_url)
     """
-    setattr(cls, _MODULE_ATTR, True)
+    setattr(cls, _DI_CONFIGURATION_ATTR, ConfigurationMetadata())
     return cls

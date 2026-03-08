@@ -18,8 +18,7 @@ Requires Python 3.12+.
 ## Quick start
 
 ```python
-from injectable.container import DIContainer
-from injectable.decorator.scope import Component, Singleton
+from injectable import DIContainer, Component, Singleton
 
 class Notifier:
     def send(self, msg: str) -> None: ...
@@ -64,7 +63,7 @@ No annotation is needed for plain type hints — the container inspects `__init_
 Mark a class so the container knows how to manage its lifetime.
 
 ```python
-from injectable.decorator.scope import Component, Singleton, RequestScoped, SessionScoped
+from injectable import Component, Singleton, RequestScoped, SessionScoped
 
 @Component        # new instance on every resolution (default)
 class EmailSender: ...
@@ -99,7 +98,7 @@ class PrimaryDB(Database): ...
 Register a factory function instead of a class. The return type determines the resolved interface.
 
 ```python
-from injectable.decorator.scope import Provider
+from injectable import Provider
 
 @Provider
 def make_sender() -> EmailSender:
@@ -125,7 +124,7 @@ Providers also accept `qualifier=` and `priority=`.
 ## Container API
 
 ```python
-from injectable.container import DIContainer
+from injectable import DIContainer
 
 container = DIContainer()
 
@@ -189,7 +188,7 @@ class OrderService:
 Use `Inject[T]` when you need a qualifier, exact priority, or optional injection.
 
 ```python
-from injectable.type import Inject
+from injectable import Inject
 
 @Component
 class ReportService:
@@ -207,7 +206,7 @@ class ReportService:
 Inject every registered implementation of an interface, sorted by priority.
 
 ```python
-from injectable.type import InjectInstances
+from injectable import InjectInstances
 
 @Component
 class NotificationFanout:
@@ -229,7 +228,7 @@ Wraps the dependency in a `LazyProxy`. The real instance is not resolved until
    re-resolve on every `.get()` call instead of caching a stale request instance
 
 ```python
-from injectable.type import Lazy
+from injectable import Lazy
 
 @Singleton
 class ReportService:
@@ -291,7 +290,7 @@ Called by the container immediately after the instance is constructed and all
 dependencies are injected. Both sync and async forms are supported.
 
 ```python
-from injectable.decorator.lifecycle import PostConstruct
+from injectable import PostConstruct
 
 @Singleton
 class SearchIndex:
@@ -311,7 +310,7 @@ Called during `shutdown()` / `ashutdown()` for every **cached singleton** instan
 DEPENDENT instances are not owned by the container and are never destroyed this way.
 
 ```python
-from injectable.decorator.lifecycle import PreDestroy
+from injectable import PreDestroy
 
 @Singleton
 class ConnectionPool:
@@ -344,7 +343,7 @@ Group related `@Provider` methods in a single class.
 so providers can share config or other injected collaborators via `self`.
 
 ```python
-from injectable.module import Configuration
+from injectable import Configuration
 from injectable.decorator.scope import Provider, Singleton
 
 @Singleton
@@ -375,6 +374,64 @@ All `@Provider` options (`qualifier=`, `priority=`, `singleton=`) work normally 
 ---
 
 ## Named qualifiers and priority
+
+### @Named and @Priority decorators
+
+Qualifiers and priorities can be applied inline via the scope decorator or as
+separate `@Named` / `@Priority` modifiers on top of any scope decorator.
+
+```python
+from injectable import Named, Priority
+
+# Inline form — shorter, good for simple cases
+@Singleton(qualifier="primary", priority=1)
+class PrimaryDB(Database): ...
+
+# Modifier form — useful when the qualifier or priority is a separate concern
+@Singleton
+@Named(name="replica")
+@Priority(priority=2)
+class ReplicaDB(Database): ...
+```
+
+`@Named` requires keyword argument `name=` — bare `@Named` raises `TypeError` immediately.
+
+Both modifiers work on `@Provider` functions too:
+
+```python
+@Provider(singleton=True)
+@Named(name="readonly")
+@Priority(priority=5)
+def make_replica() -> Database:
+    return ReplicaDB(url=os.environ["REPLICA_URL"])
+```
+
+---
+
+## Warm-up — eager singleton instantiation
+
+By default singletons are created lazily on the first `get()` call.
+Call `warm_up()` to pre-create them at startup so the first real request
+doesn't pay the construction cost.
+
+```python
+# Sync — raises RuntimeError if any singleton has an async provider
+container.warm_up()
+container.warm_up(qualifier="db")    # only bindings with qualifier="db"
+container.warm_up(priority=0)        # only bindings with priority=0
+
+# Async — handles both sync and async singleton providers
+await container.awarm_up()
+await container.awarm_up(qualifier="db")
+```
+
+`warm_up()` is all-or-nothing: if any matching singleton is backed by an async
+provider it raises **before** touching the cache, so the cache is never left
+partially warmed.  Use `awarm_up()` when you have async providers.
+
+---
+
+## Named qualifiers and priority (resolution)
 
 ```python
 @Singleton(qualifier="primary")
@@ -438,6 +495,8 @@ Tests are organised by feature — one file per subsystem:
 | `test_async.py` | `aget`, `aget_all`, async providers, async context manager |
 | `test_configuration.py` | `@Configuration`, `install()`, `ainstall()`, Spring-style injection |
 | `test_circular.py` | `CircularDependencyError`, diamond dependency, `Lazy` cycle-break |
+| `test_warmup.py` | `warm_up()`, `awarm_up()`, all-or-nothing guard, qualifier/priority filter |
+| `test_decorators.py` | `@Named`, `@Priority`, `@Inheritable`, stacking, error paths |
 
 ---
 

@@ -444,7 +444,7 @@ class TestProviderWithDeps:
 
 
 # ─────────────────────────────────────────────────────────────────
-#  DIContainerDescriptor._render() tests
+#  DIContainerDescriptor.render() tests
 # ─────────────────────────────────────────────────────────────────
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -459,16 +459,16 @@ def _bd(interface: str, impl: str, scope: Scope) -> BindingDescriptor:
 
 
 class TestDIContainerDescriptorRender:
-    """Tests for DIContainerDescriptor._render() and __repr__."""
+    """Tests for DIContainerDescriptor.render() and __repr__."""
 
     def test_empty_descriptor_renders_empty_string(self) -> None:
-        """With no bindings at all, _render() should return an empty string.
+        """With no bindings at all, render() should return an empty string.
 
         Edge case: empty container — no headers, no lines.
         """
         descriptor = DIContainerDescriptor(validated=True, bindings=())
 
-        result = descriptor._render()
+        result = descriptor.render()
 
         assert result == ""
 
@@ -479,7 +479,7 @@ class TestDIContainerDescriptorRender:
         binding = _bd("Notifier", "SMSNotifier", Scope.SINGLETON)
         descriptor = DIContainerDescriptor(validated=True, bindings=(binding,))
 
-        result = descriptor._render()
+        result = descriptor.render()
 
         assert "[SINGLETON]" in result
         # Last (and only) entry → └── connector
@@ -491,7 +491,7 @@ class TestDIContainerDescriptorRender:
         binding = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
         descriptor = DIContainerDescriptor(validated=True, bindings=(binding,))
 
-        result = descriptor._render()
+        result = descriptor.render()
 
         assert "[DEPENDENT]" in result
         assert "EmailNotifier" in result
@@ -511,7 +511,7 @@ class TestDIContainerDescriptorRender:
             bindings=(b1, b2, b3),
         )
 
-        result = descriptor._render()
+        result = descriptor.render()
         lines = result.splitlines()
 
         # Header line comes first
@@ -533,7 +533,7 @@ class TestDIContainerDescriptorRender:
             bindings=(singleton, dependent),
         )
 
-        result = descriptor._render()
+        result = descriptor.render()
 
         # Both headers present — one for each non-empty scope
         assert "[SINGLETON]" in result
@@ -553,7 +553,7 @@ class TestDIContainerDescriptorRender:
             bindings=(dependent, singleton),  # reversed insertion order
         )
 
-        result = descriptor._render()
+        result = descriptor.render()
 
         # [SINGLETON] header must appear before [DEPENDENT] regardless of
         # the order the bindings were added to the descriptor.
@@ -564,7 +564,7 @@ class TestDIContainerDescriptorRender:
         binding = _bd("Notifier", "EmailNotifier", Scope.DEPENDENT)
         descriptor = DIContainerDescriptor(validated=True, bindings=(binding,))
 
-        assert repr(descriptor) == descriptor._render()
+        assert repr(descriptor) == descriptor.render()
 
     def test_render_via_container_describe(self, container: DIContainer) -> None:
         """Integration smoke test: DIContainer.describe()._render() must not
@@ -573,7 +573,7 @@ class TestDIContainerDescriptorRender:
         container.bind(Notifier, EmailNotifier)
         container.bind(Notifier, SMSNotifier)
 
-        result = container.describe()._render()
+        result = container.describe().render()
 
         # Both implementations should appear somewhere in the rendered output
         assert "EmailNotifier" in result

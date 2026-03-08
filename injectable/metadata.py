@@ -47,6 +47,7 @@ class ScopeLeak:
 
 _DI_METADATA_ATTR = "__di_metadata__"  # storage slot only — not a semantic key
 _DI_PROVIDER_ATTR = "__di_provider__"  # storage slot only
+_DI_CONFIGURATION_ATTR = "__di_module__"
 
 
 class DIMetadata:
@@ -151,9 +152,32 @@ class ProviderMetadata:
         return cls(qualifier=None, priority=0, singleton=False, is_async=False)
 
 
+class ConfigurationMetadata:
+    """
+    Holds all DI metadata for a @Configuration class.
+    Stored directly on the function via __dict__ — same guarantees.
+    """
+
+    __slots__ = ()
+
+
 # ─────────────────────────────────────────────────────────────────
 #  Accessors — all go through these, never raw __dict__ access
 # ─────────────────────────────────────────────────────────────────
+
+
+def _has_configuration_module(cls: type) -> bool:
+    """Return True if *cls* was decorated with @Configuration.
+
+    Uses own __dict__ only — does not walk MRO — so subclasses of a
+    @Configuration class are not treated as modules themselves.
+    """
+    return bool(_get_configuration_module(cls))
+
+
+def _get_configuration_module(cls: type) -> ConfigurationMetadata | None:
+    val = cls.__dict__.get(_DI_CONFIGURATION_ATTR)
+    return val if isinstance(val, ConfigurationMetadata) else None
 
 
 def _get_own_metadata(cls: type) -> DIMetadata | None:

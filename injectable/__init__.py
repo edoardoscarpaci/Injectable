@@ -33,7 +33,7 @@ from .decorator.scope import (
     Inheritable,
 )
 from .decorator.lifecycle import PostConstruct, PreDestroy
-from .module import Configuration
+from .decorator.module import Configuration
 from .type import Inject, InjectInstances, Lazy
 
 import logging

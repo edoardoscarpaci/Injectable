@@ -23,7 +23,8 @@ import pytest
 
 from injectable.container import DIContainer
 from injectable.decorator.scope import Provider, Singleton
-from injectable.module import Configuration, _is_module
+from injectable.decorator.module import Configuration
+from injectable.metadata import _has_configuration_module
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -41,15 +42,15 @@ class TestConfigurationDecorator:
         class MyModule:
             pass
 
-        assert _is_module(MyModule) is True
+        assert _has_configuration_module(MyModule) is True
 
     def test_undecorated_class_is_not_a_module(self) -> None:
-        """_is_module() must return False for a plain class."""
+        """_has_configuration_module() must return False for a plain class."""
 
         class NotAModule:
             pass
 
-        assert _is_module(NotAModule) is False
+        assert _has_configuration_module(NotAModule) is False
 
     def test_returns_same_class(self) -> None:
         """@Configuration must return the original class unchanged (no wrapping)."""
@@ -73,8 +74,8 @@ class TestConfigurationDecorator:
         class Sub(Base):
             pass
 
-        assert _is_module(Base) is True
-        assert _is_module(Sub) is False
+        assert _has_configuration_module(Base) is True
+        assert _has_configuration_module(Sub) is False
 
 
 # ─────────────────────────────────────────────────────────────────
