@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "injectable-tests"
+name = "injectpy-tests"
 version = "0.1.0"
-description = "Test suite for the injectable DI container library"
+description = "Test suite for the injectpy DI container library"
 authors = []
 # package-mode = false tells Poetry this is not a publishable package —
 # just a project with dependencies. Requires Poetry >= 1.8.0.
@@ -11,9 +11,9 @@ package-mode = false
 python = ">=3.12"
 pytest = ">=8.0.0"
 pytest-asyncio = ">=0.24.0"
-# Path dependency — makes "from injectable.container import ..." work
+# Path dependency — makes "from injectpy.container import ..." work
 # without needing pythonpath hacks. Poetry installs the parent in editable mode.
-injectable = {path = "..", develop = true}
+injectpy = {path = "..", develop = true}
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

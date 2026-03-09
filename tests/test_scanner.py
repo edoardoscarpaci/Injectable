@@ -18,6 +18,7 @@ DESIGN: Fake modules are created via types.ModuleType and temporarily registered
 in sys.modules. Stamping __module__ on each class/function makes inspect.getmodule()
 return the fake module, satisfying the scanner's "defined here?" check.
 """
+
 from __future__ import annotations
 
 import sys
@@ -27,9 +28,8 @@ from abc import ABC, abstractmethod
 
 import pytest
 
-from injectable.container import DIContainer
-from injectable.decorator.scope import Component, Provider, Singleton
-from injectable.scanner import DefaultContainerScanner
+from injectpy.container import DIContainer
+from injectpy.decorator.scope import Component, Provider, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -43,6 +43,7 @@ from injectable.scanner import DefaultContainerScanner
 #  provider function defined in this file.
 # ─────────────────────────────────────────────────────────────────
 
+
 class _ProviderWidget:
     """Module-level sentinel used as @Provider return type in scanner tests."""
 
@@ -51,9 +52,10 @@ class _ProviderWidget:
 #  Helpers and fixtures
 # ─────────────────────────────────────────────────────────────────
 
+
 def _fresh_module_name() -> str:
     """Return a unique module name that cannot collide with real modules."""
-    return f"_injectable_test_{uuid.uuid4().hex}"
+    return f"_injectpy_test_{uuid.uuid4().hex}"
 
 
 def _add(mod: types.ModuleType, obj: object) -> object:
@@ -95,6 +97,7 @@ def fake_mod() -> types.ModuleType:
 #  Tests: basic registration
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestScanBasicRegistration:
     """Verify that scan() picks up the standard DI decorators."""
 
@@ -102,6 +105,7 @@ class TestScanBasicRegistration:
         self, container: DIContainer, fake_mod: types.ModuleType
     ) -> None:
         """@Component class defined in the module must be registered."""
+
         @Component
         class MyService:
             pass
@@ -116,6 +120,7 @@ class TestScanBasicRegistration:
         self, container: DIContainer, fake_mod: types.ModuleType
     ) -> None:
         """@Singleton class must be registered and its scope preserved."""
+
         @Singleton
         class MySingleton:
             pass
@@ -132,6 +137,7 @@ class TestScanBasicRegistration:
         self, container: DIContainer, fake_mod: types.ModuleType
     ) -> None:
         """@Provider function defined in the module must be registered."""
+
         # Return type must be a module-level class so ProviderBinding can
         # resolve it via get_type_hints(fn) at registration time.
         @Provider
@@ -148,6 +154,7 @@ class TestScanBasicRegistration:
         self, container: DIContainer, fake_mod: types.ModuleType
     ) -> None:
         """scan(str) must import the module by name then scan it."""
+
         @Component
         class NamedService:
             pass
@@ -163,12 +170,13 @@ class TestScanBasicRegistration:
         self, container: DIContainer, fake_mod: types.ModuleType
     ) -> None:
         """scan(ModuleType) must accept an already-imported module object."""
+
         @Component
         class DirectService:
             pass
 
         _add(fake_mod, DirectService)
-        container.scan(fake_mod)   # ModuleType, not a string
+        container.scan(fake_mod)  # ModuleType, not a string
 
         assert isinstance(container.get(DirectService), DirectService)
 
@@ -176,6 +184,7 @@ class TestScanBasicRegistration:
 # ─────────────────────────────────────────────────────────────────
 #  Tests: filtering / skipping
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScanFiltering:
     """Verify that scan() applies the private-name and re-export guards."""
@@ -189,6 +198,7 @@ class TestScanFiltering:
         them would break encapsulation. The '_' prefix convention in Python
         signals 'not part of the public API'.
         """
+
         @Component
         class _PrivateService:
             pass
@@ -210,6 +220,7 @@ class TestScanFiltering:
         would double-register ThirdPartyService. The guard uses
         inspect.getmodule(obj) is module to detect re-exports.
         """
+
         @Component
         class ReexportedService:
             pass
@@ -230,6 +241,7 @@ class TestScanFiltering:
 #  Tests: idempotency
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestScanIdempotency:
     """Verify that scanning the same module twice doesn't double-register."""
 
@@ -242,6 +254,7 @@ class TestScanIdempotency:
         in _bindings before appending — this prevents double-registration on
         repeated scans (e.g. in a hot-reload scenario).
         """
+
         @Singleton
         class IdempotentService:
             pass
@@ -249,11 +262,12 @@ class TestScanIdempotency:
         _add(fake_mod, IdempotentService)
 
         container.scan(fake_mod)
-        container.scan(fake_mod)   # second scan — must be a no-op
+        container.scan(fake_mod)  # second scan — must be a no-op
 
         # Exactly one binding — not two
         matching = [
-            b for b in container._bindings
+            b
+            for b in container._bindings
             if getattr(b, "implementation", None) is IdempotentService
         ]
         assert len(matching) == 1
@@ -262,6 +276,7 @@ class TestScanIdempotency:
         self, container: DIContainer, fake_mod: types.ModuleType
     ) -> None:
         """Scanning the same @Provider function twice must not add duplicate ProviderBindings."""
+
         # Return type must be module-level — see _ProviderWidget sentinel above.
         @Provider
         def make_widget() -> _ProviderWidget:
@@ -272,10 +287,11 @@ class TestScanIdempotency:
         container.scan(fake_mod)
         container.scan(fake_mod)
 
-        from injectable.binding import ProviderBinding
+        from injectpy.binding import ProviderBinding
 
         matching = [
-            b for b in container._bindings
+            b
+            for b in container._bindings
             if isinstance(b, ProviderBinding) and b.fn.__name__ == "make_widget"
         ]
         assert len(matching) == 1
@@ -284,6 +300,7 @@ class TestScanIdempotency:
 # ─────────────────────────────────────────────────────────────────
 #  Tests: abstract base class auto-binding
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestScanAutoBinding:
     """Verify how scan() decides between interface-bind and self-bind."""
@@ -298,6 +315,7 @@ class TestScanAutoBinding:
         looking for such bases. If found, ClassBinding(interface, impl) is used
         instead of ClassBinding(impl, impl), so callers can resolve by interface.
         """
+
         class IRepository(ABC):
             @abstractmethod
             def find(self) -> object: ...
@@ -323,9 +341,11 @@ class TestScanAutoBinding:
         DESIGN: Self-binding ensures concrete classes with no interface can
         still be resolved directly — a common pattern for leaf services.
         """
+
         @Component
         class ConcreteLeaf:
             """No ABC — should be bound as ConcreteLeaf → ConcreteLeaf."""
+
             pass
 
         _add(fake_mod, ConcreteLeaf)
@@ -338,6 +358,7 @@ class TestScanAutoBinding:
         self, container: DIContainer, fake_mod: types.ModuleType
     ) -> None:
         """A class implementing two ABCs must be bound to both interfaces."""
+
         class IReadable(ABC):
             @abstractmethod
             def read(self) -> str: ...
@@ -368,6 +389,7 @@ class TestScanAutoBinding:
 #  Tests: error paths
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestScanErrorPaths:
     """Verify scanner behaviour for invalid inputs."""
 
@@ -376,7 +398,7 @@ class TestScanErrorPaths:
     ) -> None:
         """scan('no.such.module') must raise ModuleNotFoundError."""
         with pytest.raises(ModuleNotFoundError):
-            container.scan("no_such_module_xyzzy_injectable_test")
+            container.scan("no_such_module_xyzzy_injectpy_test")
 
     def test_container_scan_delegates_to_scanner(
         self, container: DIContainer, fake_mod: types.ModuleType

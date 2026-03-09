@@ -20,14 +20,15 @@ is the *module* namespace — not the local scope of the enclosing test function
 Classes defined locally inside a test function are invisible to get_type_hints(),
 so the container would silently skip their constructor parameters.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from injectable.container import DIContainer
-from injectable.decorator.scope import Component, Singleton
-from injectable.exceptions import CircularDependencyError
-from injectable.type import Lazy
+from injectpy.container import DIContainer
+from injectpy.decorator.scope import Component, Singleton
+from injectpy.exceptions import CircularDependencyError
+from injectpy.type import Lazy
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ from injectable.type import Lazy
 #  reference. With PEP 563, it becomes a lazy string resolved later
 #  by get_type_hints() — both classes are in module globals by then.
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class _TwoA:
@@ -52,6 +54,7 @@ class _TwoB:
 # ─────────────────────────────────────────────────────────────────
 #  Three-class cycle: _ThreeA → _ThreeB → _ThreeC → _ThreeA
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class _ThreeA:
@@ -75,6 +78,7 @@ class _ThreeC:
 #  Error-message cycle — named distinctly to check name in output
 # ─────────────────────────────────────────────────────────────────
 
+
 @Component
 class _CycleAlpha:
     def __init__(self, beta: _CycleBeta) -> None:
@@ -93,6 +97,7 @@ class _CycleBeta:
 #  so the cycle-detection stack never sees both at the same time.
 # ─────────────────────────────────────────────────────────────────
 
+
 @Singleton
 class _LazyA:
     def __init__(self, b: Lazy[_LazyB]) -> None:  # type: ignore[valid-type]
@@ -108,6 +113,7 @@ class _LazyB:
 # ─────────────────────────────────────────────────────────────────
 #  Non-circular linear chain: _LinearA → _LinearB → _LinearC
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class _LinearC:
@@ -131,6 +137,7 @@ class _LinearA:
 #  _DiamondD is a shared dep, not a cycle — it appears twice in the
 #  resolution tree but never simultaneously in the same stack path.
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class _DiamondD:
@@ -159,6 +166,7 @@ class _DiamondA:
 # ─────────────────────────────────────────────────────────────────
 #  Tests
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestCircularDependencyDetection:
     """Tests for CircularDependencyError detection and reporting."""

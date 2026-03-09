@@ -1,8 +1,8 @@
-"""Public re-exports for the injectable.decorator sub-package.
+"""Public re-exports for the injectpy.decorator sub-package.
 
 Centralises all decorator imports so callers can write:
 
-    from injectable.decorator import Component, Singleton, Named, Priority
+    from injectpy.decorator import Component, Singleton, Named, Priority
 
 instead of knowing which internal sub-module each decorator lives in.
 

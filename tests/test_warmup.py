@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from injectable import DIContainer, Provider, Singleton
+from injectpy import DIContainer, Provider, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ class TestWarmUp:
 
     def test_warm_up_noop_when_no_singletons(self, container: DIContainer) -> None:
         """warm_up() on an empty container (or with no singletons) must be a no-op."""
-        from injectable import Component
+        from injectpy import Component
 
         @Component
         class DependentOnly:
@@ -274,7 +274,7 @@ class TestAWarmUp:
         self, container: DIContainer
     ) -> None:
         """awarm_up() on a container with only DEPENDENT bindings is a no-op."""
-        from injectable import Component
+        from injectpy import Component
 
         @Component
         class Transient:

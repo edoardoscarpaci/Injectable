@@ -3,13 +3,13 @@ from typing import Any, Callable
 from .metadata import ScopeLeak
 
 
-class InjectableError(Exception):
-    """Base class for all errors in the injectable framework."""
+class injectpyError(Exception):
+    """Base class for all errors in the injectpy framework."""
 
     pass
 
 
-class BindingError(InjectableError):
+class BindingError(injectpyError):
     """Base class for all binding-related errors."""
 
     pass
@@ -40,14 +40,14 @@ class NotDecoratedError(BindingError):
         super().__init__(f"{obj} is not decorated with the required DI decorator.")
 
 
-class ProviderAlreadyDecorated(InjectableError):
+class ProviderAlreadyDecorated(injectpyError):
     """Raised when a provider function is decorated more than once."""
 
     def __init__(self, fn: Callable[..., Any]):
         super().__init__(f"'{fn.__name__}' is already decorated with @Provider.")
 
 
-class ClassAlreadyDecorated(InjectableError):
+class ClassAlreadyDecorated(injectpyError):
     """Raised when a class is decorated with more than one scope decorator."""
 
     def __init__(self, cls: type):
@@ -56,7 +56,7 @@ class ClassAlreadyDecorated(InjectableError):
         )
 
 
-class CircularDependencyError(InjectableError):
+class CircularDependencyError(injectpyError):
     """
     Raised when a circular dependency is detected during resolution.
 
@@ -78,7 +78,7 @@ class CircularDependencyError(InjectableError):
         )
 
 
-class ValidationError(InjectableError):
+class ValidationError(injectpyError):
     pass
 
 

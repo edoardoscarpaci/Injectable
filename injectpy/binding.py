@@ -404,7 +404,7 @@ class ProviderBinding(Binding):
         """No-op — provider bindings have no scope-leak semantics to check.
 
         Provider functions declare their own scope via ``singleton=True/False``
-        on :func:`~injectable.decorator.scope.Provider`, so there are no
+        on :func:`~injectpy.decorator.scope.Provider`, so there are no
         injected constructor dependencies to validate.
 
         Args:

@@ -10,18 +10,19 @@ Covered:
     - Lazy(T, qualifier=...) forwards qualifier to container.get()
     - LazyProxy.aget() async resolution path
 """
+
 from __future__ import annotations
 
-import pytest
 
-from injectable.container import DIContainer
-from injectable.decorator.scope import Component, Singleton
-from injectable.type import Lazy, LazyProxy
+from injectpy.container import DIContainer
+from injectpy.decorator.scope import Component, Singleton
+from injectpy.type import Lazy, LazyProxy
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Domain types
 # ─────────────────────────────────────────────────────────────────
+
 
 @Singleton
 class ExpensiveService:
@@ -40,6 +41,7 @@ class ExpensiveService:
 # ─────────────────────────────────────────────────────────────────
 #  LazyProxy unit tests (direct construction, no container)
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestLazyProxyUnit:
     """Unit tests for LazyProxy in isolation — uses a mock container."""
@@ -118,12 +120,15 @@ class TestLazyProxyUnit:
 
         assert result1 is None
         assert result2 is None
-        assert call_count == 1, "Container must be called only once even when result is None"
+        assert (
+            call_count == 1
+        ), "Container must be called only once even when result is None"
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Lazy[T] end-to-end tests through the container
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestLazyInjection:
     """End-to-end tests for Lazy[T] as a constructor parameter."""
@@ -136,6 +141,7 @@ class TestLazyInjection:
         self, container: DIContainer
     ) -> None:
         """Constructor with Lazy[T] must receive a LazyProxy, not the resolved type."""
+
         @Component
         class Consumer:
             def __init__(self, svc: Lazy[ExpensiveService]) -> None:  # type: ignore[valid-type]
@@ -148,10 +154,13 @@ class TestLazyInjection:
 
         # Must be a proxy — the service is NOT yet instantiated
         assert isinstance(consumer.svc, LazyProxy)
-        assert ExpensiveService.instance_count == 0, "Service must not be created until .get() is called"
+        assert (
+            ExpensiveService.instance_count == 0
+        ), "Service must not be created until .get() is called"
 
     def test_proxy_resolves_on_get(self, container: DIContainer) -> None:
         """Calling .get() on the proxy must return the actual resolved service."""
+
         @Component
         class Consumer:
             def __init__(self, svc: Lazy[ExpensiveService]) -> None:  # type: ignore[valid-type]
@@ -172,7 +181,6 @@ class TestLazyInjection:
         eagerly (no resolution), so both constructors can return before
         either circular dep is actually resolved.
         """
-        from injectable.exceptions import CircularDependencyError
 
         @Singleton
         class A:
@@ -195,8 +203,11 @@ class TestLazyInjection:
         b_instance = container.get(B)
         assert isinstance(b_instance, B)
 
-    def test_lazy_with_qualifier_forwards_to_container(self, container: DIContainer) -> None:
+    def test_lazy_with_qualifier_forwards_to_container(
+        self, container: DIContainer
+    ) -> None:
         """Lazy(T, qualifier='x') must forward the qualifier when resolving."""
+
         class DB:
             pass
 
@@ -230,11 +241,13 @@ class TestLazyInjection:
 #  Async LazyProxy tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestLazyProxyAsync:
     """Async resolution via LazyProxy.aget()."""
 
     async def test_aget_resolves_instance(self, container: DIContainer) -> None:
         """LazyProxy.aget() should resolve the dep via container.aget()."""
+
         @Component
         class Consumer:
             def __init__(self, svc: Lazy[ExpensiveService]) -> None:  # type: ignore[valid-type]

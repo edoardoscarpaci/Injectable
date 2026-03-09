@@ -58,7 +58,7 @@ class DefaultContainerScanner(ContainerScanner):
         """Initialise the scanner with a reference to the owning container.
 
         Args:
-            container: The :class:`~injectable.container.DIContainer` instance
+            container: The :class:`~injectpy.container.DIContainer` instance
                 that discovered bindings will be registered into.
         """
         self._container = container

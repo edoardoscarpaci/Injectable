@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the injectable test suite.
+"""Shared pytest fixtures for the injectpy test suite.
 
 Every test module imports from this file automatically (pytest discovers it).
 The two fixtures here handle the two isolation concerns:
@@ -15,11 +15,12 @@ Thread safety:  ✅ Each test gets its own container instance.
                 The global reset uses DIContainer.reset() which is lock-protected.
 Async safety:   ✅ pytest-asyncio runs each async test in its own event loop.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from injectable.container import DIContainer
+from injectpy.container import DIContainer
 
 
 @pytest.fixture

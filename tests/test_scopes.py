@@ -12,18 +12,20 @@ Covered:
     - Scope violation: SINGLETON depending on REQUEST raises ScopeViolationDetectedError
     - Resolving @RequestScoped outside a request context raises RuntimeError
 """
+
 from __future__ import annotations
 
 import pytest
 
-from injectable.container import DIContainer
-from injectable.decorator.scope import Component, RequestScoped, SessionScoped, Singleton
-from injectable.exceptions import ScopeViolationDetectedError
+from injectpy.container import DIContainer
+from injectpy.decorator.scope import Component, RequestScoped, SessionScoped, Singleton
+from injectpy.exceptions import ScopeViolationDetectedError
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Domain types
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class DependentService:
@@ -49,6 +51,7 @@ class SessionService:
 #  Singleton scope tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestSingletonScope:
     """Verifies that @Singleton returns the same cached instance."""
 
@@ -56,7 +59,7 @@ class TestSingletonScope:
         """Two calls to get() for the same @Singleton must return the identical object."""
         container.register(SingletonService)
 
-        first  = container.get(SingletonService)
+        first = container.get(SingletonService)
         second = container.get(SingletonService)
 
         # Must be the exact same object, not just equal
@@ -64,7 +67,7 @@ class TestSingletonScope:
 
     def test_singleton_provider_caches_result(self, container: DIContainer) -> None:
         """@Provider(singleton=True) must cache its return value across calls."""
-        from injectable.decorator.scope import Provider
+        from injectpy.decorator.scope import Provider
 
         call_count = 0
 
@@ -87,6 +90,7 @@ class TestSingletonScope:
 #  DEPENDENT scope tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestDependentScope:
     """Verifies that @Component (DEPENDENT) creates a new instance each time."""
 
@@ -94,15 +98,17 @@ class TestDependentScope:
         """Two calls to get() for the same @Component must return different objects."""
         container.register(DependentService)
 
-        first  = container.get(DependentService)
+        first = container.get(DependentService)
         second = container.get(DependentService)
 
         # Must be distinct objects — no caching for DEPENDENT scope
         assert first is not second
 
-    def test_dependent_provider_calls_factory_each_time(self, container: DIContainer) -> None:
+    def test_dependent_provider_calls_factory_each_time(
+        self, container: DIContainer
+    ) -> None:
         """@Provider(singleton=False) must invoke the factory on every resolution."""
-        from injectable.decorator.scope import Provider
+        from injectpy.decorator.scope import Provider
 
         call_count = 0
 
@@ -124,6 +130,7 @@ class TestDependentScope:
 #  REQUEST scope tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestRequestScope:
     """Verifies @RequestScoped caching within a request context."""
 
@@ -132,7 +139,7 @@ class TestRequestScope:
         container.register(RequestService)
 
         with container.scope_context.request():
-            first  = container.get(RequestService)
+            first = container.get(RequestService)
             second = container.get(RequestService)
 
         assert first is second
@@ -161,6 +168,7 @@ class TestRequestScope:
 #  SESSION scope tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestSessionScope:
     """Verifies @SessionScoped caching within a named session."""
 
@@ -169,7 +177,7 @@ class TestSessionScope:
         container.register(SessionService)
 
         with container.scope_context.session("user-1"):
-            first  = container.get(SessionService)
+            first = container.get(SessionService)
             second = container.get(SessionService)
 
         assert first is second
@@ -204,16 +212,20 @@ class TestSessionScope:
 #  Scope violation tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestScopeViolation:
     """Verifies that scope leaks (SINGLETON depending on REQUEST) are detected."""
 
-    def test_singleton_depending_on_request_scoped_raises(self, container: DIContainer) -> None:
+    def test_singleton_depending_on_request_scoped_raises(
+        self, container: DIContainer
+    ) -> None:
         """A SINGLETON that holds a REQUEST-scoped dep must raise ScopeViolationDetectedError.
 
         DESIGN: This is a "scope leak" — the singleton would cache the first
         request instance and serve it to all future requests, leaking data across
         request boundaries. The container detects this during validate_bindings().
         """
+
         @Singleton
         class BadSingleton:
             def __init__(self, svc: RequestService) -> None:
@@ -231,6 +243,7 @@ class TestScopeViolation:
 #  Async REQUEST scope tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestAsyncRequestScope:
     """Verifies arequest() async context manager isolates REQUEST-scoped instances."""
 
@@ -241,7 +254,7 @@ class TestAsyncRequestScope:
         container.register(RequestService)
 
         async with container.scope_context.arequest():
-            first  = await container.aget(RequestService)
+            first = await container.aget(RequestService)
             second = await container.aget(RequestService)
 
         assert first is second
@@ -305,6 +318,7 @@ class TestAsyncRequestScope:
 #  Async SESSION scope tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestAsyncSessionScope:
     """Verifies asession() async context manager isolates SESSION-scoped instances."""
 
@@ -315,7 +329,7 @@ class TestAsyncSessionScope:
         container.register(SessionService)
 
         async with container.scope_context.asession("async-user-1"):
-            first  = await container.aget(SessionService)
+            first = await container.aget(SessionService)
             second = await container.aget(SessionService)
 
         assert first is second
@@ -353,6 +367,7 @@ class TestAsyncSessionScope:
 #  ScopeContext.invalidate_session() tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestInvalidateSession:
     """Verifies that invalidate_session() clears the named session cache."""
 
@@ -366,7 +381,7 @@ class TestInvalidateSession:
         """
         container.register(SessionService)
 
-        with container.scope_context.session("logout-user") as sid:
+        with container.scope_context.session("logout-user"):
             first = container.get(SessionService)
 
         # Invalidate the session cache

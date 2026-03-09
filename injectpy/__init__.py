@@ -1,4 +1,4 @@
-# injectable/__init__.py
+# injectpy/__init__.py
 
 __all__ = [
     # Container

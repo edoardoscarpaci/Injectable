@@ -2,7 +2,7 @@
 and the BindingDescriptor data-class.
 
 WHY MODULE-LEVEL FIXTURES:
-  All injectable classes are defined at module level (not inside test functions)
+  All injectpy classes are defined at module level (not inside test functions)
   because ``from __future__ import annotations`` turns every annotation into a
   lazy string.  ``get_type_hints()`` resolves those strings from the function's
   ``__globals__``, which is the *module* namespace — not the local scope of the
@@ -30,20 +30,21 @@ Covered:
     - BindingDescriptor.scope_leak property logic (True/False/no-deps cases)
     - _get_dependencies with _visited filters out already-seen interfaces
 """
+
 from __future__ import annotations
 
-import pytest
 
-from injectable.binding import BindingDescriptor, ClassBinding, ProviderBinding
-from injectable.container import DIContainer
-from injectable.decorator.scope import Component, Provider, Singleton
-from injectable.metadata import Scope
-from injectable.type import Inject
+from injectpy.binding import BindingDescriptor, ClassBinding, ProviderBinding
+from injectpy.container import DIContainer
+from injectpy.decorator.scope import Component, Provider, Singleton
+from injectpy.metadata import Scope
+from injectpy.type import Inject
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Leaf — no constructor parameters; acts as the bottom of any dep chain.
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class _DescLeaf:
@@ -53,6 +54,7 @@ class _DescLeaf:
 # ─────────────────────────────────────────────────────────────────
 #  Middle — one Inject[T] dep (→ _DescLeaf).
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class _DescMiddle:
@@ -65,6 +67,7 @@ class _DescMiddle:
 # ─────────────────────────────────────────────────────────────────
 #  Root → Middle → Leaf  (three-level chain)
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class _DescRoot:
@@ -80,6 +83,7 @@ class _DescRoot:
 #  SINGLETON outlives DEPENDENT, so the dep has a narrower scope.
 # ─────────────────────────────────────────────────────────────────
 
+
 @Singleton
 class _DescSingletonParent:
     """SINGLETON that directly injects a DEPENDENT dep — scope leak scenario."""
@@ -91,6 +95,7 @@ class _DescSingletonParent:
 # ─────────────────────────────────────────────────────────────────
 #  Qualifier fixture
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component(qualifier="primary")
 class _DescQualified(_DescLeaf):
@@ -104,6 +109,7 @@ class _DescQualified(_DescLeaf):
 #  ``from __future__ import annotations`` makes all annotations lazy strings,
 #  and both classes are in module globals by the time get_type_hints() runs.
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class _DescCycleA:
@@ -124,6 +130,7 @@ class _DescCycleB:
 # ─────────────────────────────────────────────────────────────────
 #  ClassBinding.describe() tests
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestClassBindingDescribe:
     """Tests for ClassBinding.describe() and the BindingDescriptor it produces."""
@@ -271,9 +278,7 @@ class TestClassBindingDescribe:
         # Both are DEPENDENT — no leak
         assert descriptor.scope_leak is False
 
-    def test_describe_no_scope_leak_when_no_deps(
-        self, container: DIContainer
-    ) -> None:
+    def test_describe_no_scope_leak_when_no_deps(self, container: DIContainer) -> None:
         """Binding with no deps must report scope_leak=False."""
         container.register(_DescLeaf)
         binding = ClassBinding(_DescLeaf, _DescLeaf)
@@ -287,11 +292,13 @@ class TestClassBindingDescribe:
 #  ProviderBinding.describe() tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestProviderBindingDescribe:
     """Tests for ProviderBinding.describe() and the BindingDescriptor it produces."""
 
     def test_provider_describe_no_deps(self, container: DIContainer) -> None:
         """@Provider with no parameters must produce an empty dependencies tuple."""
+
         @Provider
         def make_leaf() -> _DescLeaf:
             return _DescLeaf()
@@ -327,10 +334,9 @@ class TestProviderBindingDescribe:
         assert len(descriptor.dependencies) == 1
         assert descriptor.dependencies[0].interface == "_DescLeaf"
 
-    def test_provider_describe_scope_singleton(
-        self, container: DIContainer
-    ) -> None:
+    def test_provider_describe_scope_singleton(self, container: DIContainer) -> None:
         """@Provider(singleton=True) must produce a SINGLETON descriptor."""
+
         @Provider(singleton=True)
         def make_singleton_leaf() -> _DescLeaf:
             return _DescLeaf()
@@ -346,6 +352,7 @@ class TestProviderBindingDescribe:
 # ─────────────────────────────────────────────────────────────────
 #  BindingDescriptor unit tests (no container needed — direct construction)
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestBindingDescriptorRepr:
     """Tests for BindingDescriptor.__repr__ ASCII tree rendering."""
@@ -475,7 +482,14 @@ class TestBindingDescriptorToDict:
 
         result = d.to_dict()
 
-        required_keys = {"interface", "implementation", "scope", "qualifier", "scope_leak", "dependencies"}
+        required_keys = {
+            "interface",
+            "implementation",
+            "scope",
+            "qualifier",
+            "scope_leak",
+            "dependencies",
+        }
         assert required_keys.issubset(result.keys())
 
     def test_to_dict_scope_stored_as_string_name(self) -> None:
@@ -653,6 +667,7 @@ class TestBindingDescriptorScopeLeak:
 # ─────────────────────────────────────────────────────────────────
 #  _get_dependencies cycle safety (_visited parameter)
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestGetDependenciesCycleSafety:
     """Tests for the _visited parameter on DIContainer._get_dependencies().

@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import pytest
 
-from injectable import (
+from injectpy import (
     Component,
     DIContainer,
     Inheritable,
@@ -40,9 +40,9 @@ from injectable import (
     Provider,
     Singleton,
 )
-from injectable.decorator.scope import Priority
-from injectable.exceptions import NotDecoratedError
-from injectable.metadata import _get_metadata, _get_provider_metadata
+from injectpy.decorator.scope import Priority
+from injectpy.exceptions import NotDecoratedError
+from injectpy.metadata import _get_metadata, _get_provider_metadata
 
 
 # ─────────────────────────────────────────────────────────────────

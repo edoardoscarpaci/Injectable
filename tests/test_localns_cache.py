@@ -19,12 +19,12 @@ namespace), but locally-defined classes (inside test functions, lambdas, etc.)
 never appear in __globals__. Passing localns=_build_localns() supplements
 the lookup with every registered class, making locally-defined deps resolvable.
 """
+
 from __future__ import annotations
 
-import pytest
 
-from injectable.container import DIContainer
-from injectable.decorator.scope import Component, Provider, Singleton
+from injectpy.container import DIContainer
+from injectpy.decorator.scope import Component, Provider, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -39,6 +39,7 @@ from injectable.decorator.scope import Component, Provider, Singleton
 #  in this file.
 # ─────────────────────────────────────────────────────────────────
 
+
 class _ProviderProduct:
     """Module-level sentinel used as @Provider return type in cache tests."""
 
@@ -46,6 +47,7 @@ class _ProviderProduct:
 # ─────────────────────────────────────────────────────────────────
 #  Tests: cache lifecycle
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestLocalnsCache:
     """Verifies the lazy-build, invalidate-on-write caching strategy."""
@@ -61,6 +63,7 @@ class TestLocalnsCache:
 
     def test_cache_populated_after_first_call(self, container: DIContainer) -> None:
         """_build_localns() must populate _localns_cache on first call."""
+
         @Component
         class MyService:
             pass
@@ -85,13 +88,14 @@ class TestLocalnsCache:
         calls _build_localns() once per parameter) would be O(n * bindings)
         instead of O(n). The identity check (is) verifies no rebuild happens.
         """
+
         @Component
         class MyService:
             pass
 
         container.register(MyService)
 
-        first  = container._build_localns()
+        first = container._build_localns()
         second = container._build_localns()
 
         # Must be the exact same dict object — not an equal copy
@@ -99,6 +103,7 @@ class TestLocalnsCache:
 
     def test_bind_invalidates_cache(self, container: DIContainer) -> None:
         """bind() must reset _localns_cache to None so it is rebuilt next call."""
+
         # Iface must be defined before Impl so Impl can inherit from it.
         # ClassBinding enforces issubclass(implementation, interface).
         class Iface:
@@ -109,16 +114,17 @@ class TestLocalnsCache:
             pass
 
         container.register(Impl)
-        container._build_localns()      # populate the cache
+        container._build_localns()  # populate the cache
 
         assert container._localns_cache is not None
 
-        container.bind(Iface, Impl)     # must invalidate
+        container.bind(Iface, Impl)  # must invalidate
 
         assert container._localns_cache is None
 
     def test_register_invalidates_cache(self, container: DIContainer) -> None:
         """register() must reset _localns_cache to None."""
+
         @Component
         class ServiceA:
             pass
@@ -132,12 +138,13 @@ class TestLocalnsCache:
 
         assert container._localns_cache is not None
 
-        container.register(ServiceB)    # must invalidate
+        container.register(ServiceB)  # must invalidate
 
         assert container._localns_cache is None
 
     def test_provide_invalidates_cache(self, container: DIContainer) -> None:
         """provide() must reset _localns_cache to None."""
+
         @Component
         class Widget:
             pass
@@ -160,6 +167,7 @@ class TestLocalnsCache:
 
     def test_cache_rebuilt_after_invalidation(self, container: DIContainer) -> None:
         """After invalidation, the next _build_localns() must produce a fresh dict."""
+
         @Component
         class First:
             pass
@@ -171,8 +179,8 @@ class TestLocalnsCache:
         container.register(First)
         first_cache = container._build_localns()
 
-        container.register(Second)      # invalidates
-        second_cache = container._build_localns()   # rebuilds
+        container.register(Second)  # invalidates
+        second_cache = container._build_localns()  # rebuilds
 
         # A new dict was built — not the same object as before invalidation
         assert second_cache is not first_cache
@@ -183,6 +191,7 @@ class TestLocalnsCache:
         DESIGN: This is what allows get_type_hints() to resolve forward-ref
         strings like 'IRepository' to the actual IRepository class.
         """
+
         class IRepository:
             pass
 
@@ -204,6 +213,7 @@ class TestLocalnsCache:
         (e.g. `def __init__(self, repo: SqlRepository)`) rather than the
         abstract interface. The localns must include both to handle both patterns.
         """
+
         class IRepository:
             pass
 
@@ -228,6 +238,7 @@ class TestLocalnsCache:
 #  fallback would silently produce no kwargs → TypeError: missing argument.
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestLocallyDefinedClassInjection:
     """Verify that classes defined inside test functions can be injected.
 
@@ -239,7 +250,8 @@ class TestLocallyDefinedClassInjection:
     def test_locally_defined_dep_injected_into_constructor(
         self, container: DIContainer
     ) -> None:
-        """A class defined inside this method must be injectable via its type hint."""
+        """A class defined inside this method must be injectpy via its type hint."""
+
         @Component
         class LocalConfig:
             value = "injected"
@@ -258,10 +270,9 @@ class TestLocallyDefinedClassInjection:
         assert isinstance(svc.config, LocalConfig)
         assert svc.config.value == "injected"
 
-    def test_three_level_locally_defined_chain(
-        self, container: DIContainer
-    ) -> None:
+    def test_three_level_locally_defined_chain(self, container: DIContainer) -> None:
         """A → B → C chain with all classes defined locally must resolve fully."""
+
         @Component
         class LocalC:
             label = "C"
@@ -286,9 +297,7 @@ class TestLocallyDefinedClassInjection:
         assert isinstance(a.b.c, LocalC)
         assert a.b.c.label == "C"
 
-    def test_locally_defined_dep_via_provider(
-        self, container: DIContainer
-    ) -> None:
+    def test_locally_defined_dep_via_provider(self, container: DIContainer) -> None:
         """A @Provider function with a locally-defined dep must resolve correctly.
 
         DESIGN: The dep parameter (LocalDep) IS locally-defined — that is
@@ -296,6 +305,7 @@ class TestLocallyDefinedClassInjection:
         class (_ProviderProduct) so that ProviderBinding can resolve it at
         registration time from fn.__globals__ (where local variables are absent).
         """
+
         @Singleton
         class LocalDep:
             value = "from_dep"
@@ -317,10 +327,9 @@ class TestLocallyDefinedClassInjection:
         assert isinstance(product, _ProviderProduct)
         assert product.dep_value == "from_dep"  # type: ignore[attr-defined]
 
-    def test_async_locally_defined_dep_injected(
-        self, container: DIContainer
-    ) -> None:
+    def test_async_locally_defined_dep_injected(self, container: DIContainer) -> None:
         """Async path: locally-defined dep must also resolve via aget()."""
+
         @Component
         class AsyncConfig:
             setting = "async_value"

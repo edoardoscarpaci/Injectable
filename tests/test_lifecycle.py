@@ -15,18 +15,20 @@ DESIGN NOTE: @PreDestroy is only invoked for singleton instances that
 are in the _singleton_cache. DEPENDENT instances are created and discarded
 per-resolution — the container never owns them, so it can't destroy them.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from injectable.container import DIContainer
-from injectable.decorator.lifecycle import PostConstruct, PreDestroy
-from injectable.decorator.scope import Component, Singleton
+from injectpy.container import DIContainer
+from injectpy.decorator.lifecycle import PostConstruct, PreDestroy
+from injectpy.decorator.scope import Component, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────
 #  @PostConstruct tests
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestPostConstruct:
     """Tests for the @PostConstruct lifecycle hook."""
@@ -35,6 +37,7 @@ class TestPostConstruct:
         self, container: DIContainer
     ) -> None:
         """@PostConstruct must be called once, after the constructor returns."""
+
         @Component
         class Service:
             def __init__(self) -> None:
@@ -56,6 +59,7 @@ class TestPostConstruct:
         """@PostConstruct should run after all dependencies are injected
         so that it can safely use them during initialization.
         """
+
         @Component
         class Config:
             value = "hello"
@@ -82,6 +86,7 @@ class TestPostConstruct:
         self, container: DIContainer
     ) -> None:
         """Async @PostConstruct must cause get() to raise RuntimeError — use aget() instead."""
+
         @Component
         class AsyncService:
             @PostConstruct
@@ -97,6 +102,7 @@ class TestPostConstruct:
         self, container: DIContainer
     ) -> None:
         """async @PostConstruct must be awaited when resolved via aget()."""
+
         @Component
         class AsyncService:
             def __init__(self) -> None:
@@ -116,6 +122,7 @@ class TestPostConstruct:
 #  @PreDestroy tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestPreDestroy:
     """Tests for the @PreDestroy lifecycle hook and shutdown behavior."""
 
@@ -130,7 +137,7 @@ class TestPreDestroy:
                 destroyed.append("Resource.teardown")
 
         container.register(Resource)
-        container.get(Resource)     # caches the singleton
+        container.get(Resource)  # caches the singleton
 
         container.shutdown()
 
@@ -155,7 +162,9 @@ class TestPreDestroy:
 
         container.shutdown()
 
-        assert destroyed == [], "Never-resolved singleton must not have @PreDestroy called"
+        assert (
+            destroyed == []
+        ), "Never-resolved singleton must not have @PreDestroy called"
 
     def test_pre_destroy_not_called_for_dependent_scope(
         self, container: DIContainer
@@ -175,7 +184,7 @@ class TestPreDestroy:
                 destroyed.append(True)
 
         container.register(ShortLived)
-        container.get(ShortLived)   # DEPENDENT — not cached
+        container.get(ShortLived)  # DEPENDENT — not cached
 
         container.shutdown()
 
@@ -183,6 +192,7 @@ class TestPreDestroy:
 
     def test_shutdown_clears_singleton_cache(self, container: DIContainer) -> None:
         """shutdown() must clear _singleton_cache so fresh instances are created after restart."""
+
         @Singleton
         class Resource:
             pass
@@ -211,7 +221,7 @@ class TestPreDestroy:
         container.get(Resource)
 
         with container:
-            pass   # __exit__ calls shutdown()
+            pass  # __exit__ calls shutdown()
 
         assert destroyed == [True]
 
@@ -219,6 +229,7 @@ class TestPreDestroy:
         self, container: DIContainer
     ) -> None:
         """sync shutdown() must raise RuntimeError if a @PreDestroy is async def."""
+
         @Singleton
         class Resource:
             @PreDestroy
@@ -266,6 +277,6 @@ class TestPreDestroy:
         await container.aget(Resource)
 
         async with container:
-            pass   # __aexit__ calls ashutdown()
+            pass  # __aexit__ calls ashutdown()
 
         assert torn_down == [True]

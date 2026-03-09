@@ -11,17 +11,19 @@ Covered:
 All tests are async functions — pytest-asyncio (asyncio_mode="auto") handles
 the event loop without needing @pytest.mark.asyncio markers.
 """
+
 from __future__ import annotations
 
 import pytest
 
-from injectable.container import DIContainer
-from injectable.decorator.scope import Component, Provider, Singleton
+from injectpy.container import DIContainer
+from injectpy.decorator.scope import Component, Provider, Singleton
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Domain types
 # ─────────────────────────────────────────────────────────────────
+
 
 class Cache:
     """Abstract interface for cache implementations."""
@@ -41,6 +43,7 @@ class SingletonCache(Cache):
 #  aget() tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestAget:
     """Tests for async single-instance resolution."""
 
@@ -54,6 +57,7 @@ class TestAget:
 
     async def test_aget_awaits_async_provider(self, container: DIContainer) -> None:
         """aget() must await an async provider function and return its result."""
+
         @Provider(singleton=True)
         async def make_cache() -> Cache:
             # Simulate async initialization (e.g. connecting to Redis)
@@ -95,6 +99,7 @@ class TestAget:
         self, container: DIContainer
     ) -> None:
         """aget(T, qualifier=...) must return only the binding with the matching qualifier."""
+
         @Component(qualifier="fast")
         class FastCache(Cache):
             pass
@@ -110,6 +115,7 @@ class TestAget:
 # ─────────────────────────────────────────────────────────────────
 #  aget_all() tests
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestAgetAll:
     """Tests for async multi-instance resolution."""
@@ -129,6 +135,7 @@ class TestAgetAll:
         self, container: DIContainer
     ) -> None:
         """aget_all() must handle a mix of sync and async providers transparently."""
+
         @Provider
         async def make_async_cache() -> Cache:
             return MemoryCache()
@@ -156,6 +163,7 @@ class TestAgetAll:
         self, container: DIContainer
     ) -> None:
         """aget_all() results must be sorted by ascending priority."""
+
         @Component(priority=1)
         class CacheA(Cache):
             pass
@@ -169,13 +177,14 @@ class TestAgetAll:
 
         results = await container.aget_all(Cache)
 
-        assert isinstance(results[0], CacheA)   # priority=1 first
-        assert isinstance(results[1], CacheB)   # priority=2 second
+        assert isinstance(results[0], CacheA)  # priority=1 first
+        assert isinstance(results[1], CacheB)  # priority=2 second
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Async context manager tests
 # ─────────────────────────────────────────────────────────────────
+
 
 class TestAsyncContextManager:
     """Tests for async with container: ... and async with DIContainer.scoped(): ..."""

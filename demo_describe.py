@@ -22,9 +22,10 @@ And finally a two-binding diamond (shared DatabaseConnection):
 NOTE: All classes are at module level because get_type_hints() resolves
 annotations from the module namespace, not local function scope.
 """
+
 from __future__ import annotations
 
-from injectable import (
+from injectpy import (
     Component,
     DIContainer,
     Inject,
@@ -37,6 +38,7 @@ from injectable import (
 #  Infrastructure layer
 # ─────────────────────────────────────────────────────────────────
 
+
 @Singleton
 class DatabaseConnection:
     """Pretends to hold a DB connection — singleton so it's shared app-wide."""
@@ -45,6 +47,7 @@ class DatabaseConnection:
 # ─────────────────────────────────────────────────────────────────
 #  Repository layer
 # ─────────────────────────────────────────────────────────────────
+
 
 @Component
 class OrderRepository:
@@ -65,6 +68,7 @@ class UserRepository:
 # ─────────────────────────────────────────────────────────────────
 #  Service layer
 # ─────────────────────────────────────────────────────────────────
+
 
 @Singleton
 class AppService:
@@ -109,16 +113,17 @@ class Dashboard:
 
     def __init__(
         self,
-        users: Inject[UserService],   # type: ignore[valid-type]
-        orders: Inject[OrderService], # type: ignore[valid-type]
+        users: Inject[UserService],  # type: ignore[valid-type]
+        orders: Inject[OrderService],  # type: ignore[valid-type]
     ) -> None:
-        self.users  = users
+        self.users = users
         self.orders = orders
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Main
 # ─────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     container = DIContainer()
@@ -137,7 +142,8 @@ def main() -> None:
     separator = "─" * 60
 
     # ── Tree 1: three-tier chain ─────────────────────────────────
-    from injectable.binding import ClassBinding
+    from injectpy.binding import ClassBinding
+
     app_binding = ClassBinding(AppService, AppService)
 
     print(separator)
@@ -172,19 +178,21 @@ def main() -> None:
 
     # ── Serialised dict ──────────────────────────────────────────
     import json
+
     print(separator)
     print("AppService as JSON")
     print(separator)
     print(json.dumps(app_binding.describe(container).to_dict(), indent=2))
     print()
 
-
     import json
+
     print(separator)
     print("Container as JSON")
     print(separator)
     print(json.dumps(container.describe().to_dict(), indent=2))
     print()
+
 
 if __name__ == "__main__":
     main()

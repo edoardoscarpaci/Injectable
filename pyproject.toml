@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "injectable"
+name = "injectpy"
 version = "0.1.0"
 description = ""
 authors = ["edoardo.scarpaci <edoardo.scarpaci@gmail.com>"]
 readme = "README.md"
-packages = [{ include = "injectable" }]
+packages = [{ include = "injectpy" }]
 
 [tool.poetry.dependencies]
 python = ">=3.12"

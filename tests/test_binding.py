@@ -11,19 +11,24 @@ Covered:
       missing return annotation
     - __repr__ output sanity checks
 """
+
 from __future__ import annotations
 
 import pytest
 
-from injectable.binding import ClassBinding, ProviderBinding
-from injectable.decorator.scope import Component, Provider, Singleton
-from injectable.exceptions import ClassBindingNotDecoratedError, ProviderBindingNotDecoratedError
-from injectable.metadata import Scope
+from injectpy.binding import ClassBinding, ProviderBinding
+from injectpy.decorator.scope import Component, Provider, Singleton
+from injectpy.exceptions import (
+    ClassBindingNotDecoratedError,
+    ProviderBindingNotDecoratedError,
+)
+from injectpy.metadata import Scope
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Domain types used across binding tests
 # ─────────────────────────────────────────────────────────────────
+
 
 class Notifier:
     """Abstract-style base — used as interface in binding tests."""
@@ -47,6 +52,7 @@ class UndecoNotifier(Notifier):
 #  ClassBinding tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestClassBinding:
     """Tests for ClassBinding construction and validation."""
 
@@ -56,7 +62,7 @@ class TestClassBinding:
 
         assert b.interface is Notifier
         assert b.implementation is EmailNotifier
-        assert b.scope == Scope.DEPENDENT   # @Component maps to DEPENDENT
+        assert b.scope == Scope.DEPENDENT  # @Component maps to DEPENDENT
 
     def test_singleton_scope_detected(self) -> None:
         """@Singleton decorator must produce Scope.SINGLETON on the binding."""
@@ -77,6 +83,7 @@ class TestClassBinding:
 
     def test_raises_if_implementation_not_subclass(self) -> None:
         """Implementation must be a subclass of the interface — raises TypeError otherwise."""
+
         class Unrelated:
             pass
 
@@ -104,6 +111,7 @@ class TestClassBinding:
 
     def test_qualifier_included_in_repr(self) -> None:
         """qualifier should appear in __repr__ when set."""
+
         @Component(qualifier="email")
         class QualifiedNotifier(Notifier):
             pass
@@ -118,11 +126,13 @@ class TestClassBinding:
 #  ProviderBinding tests
 # ─────────────────────────────────────────────────────────────────
 
+
 class TestProviderBinding:
     """Tests for ProviderBinding construction, async detection, and error paths."""
 
     def test_creates_from_provider_function(self) -> None:
         """Happy path: @Provider function with return annotation."""
+
         @Provider
         def make_notifier() -> Notifier:
             return EmailNotifier()
@@ -130,10 +140,11 @@ class TestProviderBinding:
         b = ProviderBinding(make_notifier)
 
         assert b.interface is Notifier
-        assert b.scope == Scope.DEPENDENT   # singleton=False is the default
+        assert b.scope == Scope.DEPENDENT  # singleton=False is the default
 
     def test_singleton_provider_scope(self) -> None:
         """@Provider(singleton=True) must produce Scope.SINGLETON."""
+
         @Provider(singleton=True)
         def make_singleton_notifier() -> Notifier:
             return EmailNotifier()
@@ -144,6 +155,7 @@ class TestProviderBinding:
 
     def test_is_async_false_for_sync_provider(self) -> None:
         """Sync provider function must have is_async=False."""
+
         @Provider
         def make_notifier() -> Notifier:
             return EmailNotifier()
@@ -154,6 +166,7 @@ class TestProviderBinding:
 
     def test_is_async_true_for_async_provider(self) -> None:
         """async def provider must have is_async=True — detected at registration time."""
+
         @Provider
         async def make_notifier_async() -> Notifier:
             return EmailNotifier()
@@ -164,6 +177,7 @@ class TestProviderBinding:
 
     def test_qualifier_and_priority_stored(self) -> None:
         """qualifier and priority from @Provider metadata are stored on the binding."""
+
         @Provider(qualifier="sms", priority=5)
         def make_sms() -> Notifier:
             return SMSNotifier()
@@ -175,6 +189,7 @@ class TestProviderBinding:
 
     def test_raises_if_not_decorated(self) -> None:
         """Function without @Provider must raise ProviderBindingNotDecoratedError."""
+
         def bare_fn() -> Notifier:
             return EmailNotifier()
 
@@ -187,6 +202,7 @@ class TestProviderBinding:
         The return annotation is used as the binding interface — without it
         the container has no idea what type this factory produces.
         """
+
         @Provider
         def no_return():  # type: ignore[return]
             return EmailNotifier()
@@ -196,6 +212,7 @@ class TestProviderBinding:
 
     def test_repr_contains_interface_and_function_name(self) -> None:
         """__repr__ should include interface name, function name, and scope."""
+
         @Provider
         def make_notifier() -> Notifier:
             return EmailNotifier()
