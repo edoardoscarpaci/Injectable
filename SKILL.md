@@ -8,7 +8,7 @@
 
 **Providify** is a zero-dependency Python dependency injection (DI) container library inspired by Jakarta CDI and Spring Framework. It automates constructor injection via type hints, manages component lifecycles across multiple scopes, and supports both synchronous and asynchronous resolution patterns.
 
-- **Version:** 0.1.4a1
+- **Version:** 0.1.4a2
 - **Python:** 3.12+
 - **License:** Apache-2.0
 - **Dependencies:** None (stdlib only)
@@ -50,7 +50,7 @@ providify/
 ├── metadata.py          — DIMetadata, ProviderMetadata, Scope enum, accessors
 ├── scope.py             — ScopeContext: request/session instance caching via ContextVar
 ├── resolution.py        — _resolution_stack (ContextVar), cycle detection, _UNRESOLVED sentinel
-├── type.py              — Inject, InjectInstances, Lazy, Live aliases; proxies and metadata classes
+├── type.py              — Inject, InjectInstances, Lazy, Live aliases; proxies and metadata classes; _unwrap_classvar()
 ├── utils.py             — Generic type utilities: _type_name, _is_generic_subtype, _interface_matches
 ├── descriptor.py        — BindingDescriptor, DIContainerDescriptor (serializable snapshots / ASCII trees)
 ├── exceptions.py        — All custom exceptions
@@ -403,7 +403,14 @@ class NotificationRouter:
 
 **Methods on `InstanceProxy`:** `.get()`, `.get_all()`, `.aget()`, `.aget_all()`, `.resolvable()`.
 
-**Scope safety:** Always passes validation — even `Instance[RequestScoped]` in a `@Singleton`. Re-resolves per call like `Live[T]` without needing the wrapper.
+**Scope safety:** Always passes validation — even `Instance[RequestScoped]` in a `@Singleton`. Re-resolves per call like `Live[T]` without needing the wrapper. This exemption applies equally to the `ClassVar[Instance[T]]` form.
+
+**`ClassVar` form:** `ClassVar[Instance[T]]` is fully supported — the container unwraps the `ClassVar` before dispatching:
+```python
+@Singleton
+class AlertService:
+    emailer: ClassVar[Instance[Emailer]]   # ✅ identical to plain Instance[Emailer]
+```
 
 ### `Live[T]`  *(new)*
 
@@ -557,10 +564,10 @@ Tests live in `tests/`. Each test class is fully self-contained.
 |---|---|
 | `test_container.py` | bind/register/provide/get/get_all/current/scoped |
 | `test_scopes.py` | All four scopes, scope violation, @Inheritable |
-| `test_inject.py` | Inject[T], InjectInstances[T], optional |
+| `test_inject.py` | Inject[T], InjectInstances[T], optional, ClassVar[Inject/Live/Lazy] |
 | `test_lazy.py` | LazyProxy, Lazy[T], circular-via-lazy |
 | `test_live.py` | LiveProxy, Live[T], scope-safe injection |
-| `test_instance.py` | InstanceProxy, Instance[T], is_resolvable(), scope-safety, async |
+| `test_instance.py` | InstanceProxy, Instance[T], is_resolvable(), scope-safety, async, ClassVar[Instance[T]] |
 | `test_lifecycle.py` | @PostConstruct, @PreDestroy, shutdown |
 | `test_async.py` | aget/aget_all, async providers, async context managers |
 | `test_configuration.py` | @Configuration, install/ainstall |
@@ -613,3 +620,4 @@ poetry run pytest
 - **`@Named` requires `name=` keyword** → `@Named("smtp")` raises `TypeError`. Always use `@Named(name="smtp")`.
 - **`Inject[T, qualifier=...]` is invalid Python** → subscript only accepts one type arg. Use `Annotated[T, InjectMeta(qualifier=...)]` instead. Same rule applies to `Lazy[T]` and `Live[T]` — use `LazyMeta` / `LiveMeta` via `Annotated`.
 - **`Inject(T, qualifier=...)` call form** → works at runtime but type checkers (Pylance, mypy) cannot infer the return type. Use `Annotated[T, InjectMeta(...)]`.
+- **`ClassVar[Instance[T]]` / `ClassVar[Live[T]]` / `ClassVar[Lazy[T]]` / `ClassVar[Inject[T]]` are all valid** → the container calls `_unwrap_classvar()` at every injection boundary before dispatching. All four injection types work identically in the `ClassVar[...]` form. Scope-violation detection and dependency-graph construction also see the unwrapped hint.

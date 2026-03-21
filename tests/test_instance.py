@@ -66,6 +66,8 @@ Covered:
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from providify.container import DIContainer
 from providify.decorator.scope import (
     Component,
@@ -1217,3 +1219,124 @@ class TestContainerIsResolvable:
         assert container.is_resolvable(Notifier, qualifier="special") is True
         assert container.is_resolvable(Notifier, priority=7) is True
         assert container.is_resolvable(Notifier, qualifier="other") is False
+
+
+# ─────────────────────────────────────────────────────────────────
+#  ClassVar[Instance[T]] — regression suite for ClassVar unwrapping
+# ─────────────────────────────────────────────────────────────────
+
+
+class TestClassVarInstanceAnnotation:
+    """ClassVar[Instance[T]] must be treated identically to plain Instance[T].
+
+    The bug this covers: ClassVar[Annotated[T, InstanceMeta()]] has
+    get_origin() == ClassVar, not Annotated — so the container's
+    _has_providify_metadata() returned False and the annotation was silently
+    skipped.  _unwrap_classvar() is now called at every injection boundary
+    to strip the outer ClassVar before dispatching.
+    """
+
+    def test_classvar_instance_injects_proxy(self, container: DIContainer) -> None:
+        """ClassVar[Instance[T]] must inject an InstanceProxy, not be silently skipped."""
+
+        @Singleton
+        class AlertService:
+            # ClassVar form — signals this is a class-level attribute, but the
+            # container must still inject an InstanceProxy here.
+            notifiers: ClassVar[Instance[Notifier]]
+
+        container.bind(Notifier, EmailNotifier)
+        container.register(AlertService)
+
+        svc = container.get(AlertService)
+
+        # Must be an InstanceProxy — not the default ClassVar sentinel (missing attr)
+        assert isinstance(svc.notifiers, InstanceProxy)
+
+    def test_classvar_instance_proxy_get_works(self, container: DIContainer) -> None:
+        """proxy.get() on a ClassVar[Instance[T]] proxy must resolve the correct type."""
+
+        @Singleton
+        class AlertService:
+            notifiers: ClassVar[Instance[Notifier]]
+
+        container.bind(Notifier, EmailNotifier)
+        container.register(AlertService)
+
+        svc = container.get(AlertService)
+
+        assert isinstance(svc.notifiers.get(), EmailNotifier)
+
+    def test_classvar_instance_proxy_get_all_works(
+        self, container: DIContainer
+    ) -> None:
+        """proxy.get_all() on a ClassVar[Instance[T]] proxy must return all bindings."""
+
+        @Singleton
+        class AlertService:
+            notifiers: ClassVar[Instance[Notifier]]
+
+        container.bind(Notifier, EmailNotifier)
+        container.bind(Notifier, SmsNotifier)
+        container.register(AlertService)
+
+        svc = container.get(AlertService)
+
+        result = svc.notifiers.get_all()
+
+        assert len(result) == 2
+
+    def test_classvar_instance_proxy_resolvable(self, container: DIContainer) -> None:
+        """proxy.resolvable() on ClassVar[Instance[T]] must reflect registry state."""
+
+        @Singleton
+        class AlertService:
+            notifiers: ClassVar[Instance[Notifier]]
+
+        container.bind(Notifier, EmailNotifier)
+        container.register(AlertService)
+
+        svc = container.get(AlertService)
+
+        assert svc.notifiers.resolvable() is True
+        assert svc.notifiers.resolvable(qualifier="fax") is False
+
+    def test_classvar_instance_scope_safety(self, container: DIContainer) -> None:
+        """ClassVar[Instance[RequestScoped]] in @Singleton must pass scope validation.
+
+        Instance[T] is exempt from LiveInjectionRequiredError regardless of how
+        the annotation is wrapped — ClassVar[Instance[T]] must carry the same
+        exemption as plain Instance[T].
+        """
+
+        @Singleton
+        class ProcessingService:
+            # Mimics the user's original question — ClassVar[Instance[Emailer]]
+            ctx: ClassVar[Instance[RequestContext]]
+
+        RequestContext.reset()
+        container.register(RequestContext)
+        container.register(ProcessingService)
+
+        # Must not raise LiveInjectionRequiredError during validation
+        with container.scope_context.request():
+            svc = container.get(ProcessingService)
+            assert isinstance(svc.ctx, InstanceProxy)
+
+    async def test_classvar_instance_proxy_aget_works(
+        self, container: DIContainer
+    ) -> None:
+        """proxy.aget() on a ClassVar[Instance[T]] proxy must resolve asynchronously."""
+
+        @Singleton
+        class AlertService:
+            notifiers: ClassVar[Instance[Notifier]]
+
+        container.bind(Notifier, EmailNotifier)
+        container.register(AlertService)
+
+        svc = container.get(AlertService)
+
+        result = await svc.notifiers.aget()
+
+        assert isinstance(result, EmailNotifier)

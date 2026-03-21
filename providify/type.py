@@ -5,6 +5,7 @@ from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
+    ClassVar,
     Generic,
     Type,
     TypeVar,
@@ -1054,7 +1055,42 @@ def _has_providify_metadata(hint: Any) -> bool:
     return _get_providify_metadata(hint) is not None
 
 
+def _unwrap_classvar(hint: Any) -> Any:
+    """Strip a ``ClassVar[X]`` wrapper and return the inner type ``X``.
+
+    Used by the container's class-var injection paths so that annotations
+    like ``ClassVar[Instance[T]]`` are treated identically to plain
+    ``Instance[T]`` during resolution and scope-violation checks.
+
+    Args:
+        hint: Any type hint — ClassVar-wrapped or not.
+
+    Returns:
+        The inner type arg when ``hint`` is ``ClassVar[X]``; the original
+        hint unchanged for every other form (bare type, ``Annotated[...]``,
+        ``list[T]``, etc.).
+
+    Edge cases:
+        - Bare ``ClassVar`` with no args (shouldn't appear in practice) → hint
+          returned unchanged rather than crashing.
+        - Already-unwrapped hint                                         → no-op.
+    """
+    if get_origin(hint) is ClassVar:
+        inner_args = get_args(hint)
+        # Guard against bare ClassVar with no args — extremely rare in practice
+        # but avoids an IndexError in pathological annotation cases.
+        return inner_args[0] if inner_args else hint
+    return hint
+
+
 def _get_providify_metadata(hint: Any) -> _providify | None:
+    # ClassVar[Instance[T]] expands to ClassVar[Annotated[T, InstanceMeta()]].
+    # get_origin() returns ClassVar — not Annotated — so the Annotated check
+    # below would miss it entirely.  Unwrap one level so the real inner type
+    # (e.g. Annotated[T, InstanceMeta()]) is what we actually inspect.
+    if get_origin(hint) is ClassVar:
+        inner_args = get_args(hint)
+        hint = inner_args[0] if inner_args else hint
     if get_origin(hint) is Annotated:
         args = get_args(hint)
         return next((a for a in args[1:] if isinstance(a, _providify)), None)

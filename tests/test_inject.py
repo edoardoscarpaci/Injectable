@@ -19,7 +19,9 @@ in _resolve_hint_sync and acts on the metadata.
 """
 
 from __future__ import annotations
+
 import pytest
+from typing import ClassVar
 
 from providify.container import DIContainer
 from providify.decorator.scope import Component
@@ -583,3 +585,75 @@ class TestInjectTypeAliasExpansion:
         inner_type, meta = get_args(store_hint)[:2]
         assert inner_type is Storage
         assert isinstance(meta, InjectMeta)
+
+
+# ─────────────────────────────────────────────────────────────────
+#  ClassVar[Live[T]] and ClassVar[Lazy[T]] — regression for ClassVar unwrapping
+# ─────────────────────────────────────────────────────────────────
+
+
+class TestClassVarLiveAndLazyAnnotations:
+    """ClassVar[Live[T]] and ClassVar[Lazy[T]] must be treated identically to
+    plain Live[T] / Lazy[T].
+
+    The bug: ClassVar[Annotated[T, LiveMeta()]] has get_origin() == ClassVar,
+    so _has_providify_metadata() returned False and the annotation was silently
+    skipped.  _unwrap_classvar() is now applied at every injection boundary.
+    """
+
+    def test_classvar_live_injects_live_proxy(self, container: DIContainer) -> None:
+        """ClassVar[Live[T]] must receive a LiveProxy, not be silently skipped.
+
+        Uses @Component scope to avoid the SINGLETON → DEPENDENT scope-leak
+        validator — that check is orthogonal to the ClassVar unwrapping fix.
+        """
+
+        @Component
+        class Service:
+            # ClassVar form of a Live injection — should still yield a LiveProxy
+            store: ClassVar[Live[Storage]]
+
+        container.bind(Storage, FileStorage)
+        container.register(Service)
+
+        svc = container.get(Service)
+
+        # Must be a LiveProxy — not the default un-set attribute
+        assert isinstance(svc.store, LiveProxy)
+        assert isinstance(svc.store.get(), FileStorage)
+
+    def test_classvar_lazy_injects_lazy_proxy(self, container: DIContainer) -> None:
+        """ClassVar[Lazy[T]] must receive a LazyProxy, not be silently skipped.
+
+        Uses @Component scope to avoid the SINGLETON → DEPENDENT scope-leak
+        validator — that check is orthogonal to the ClassVar unwrapping fix.
+        """
+
+        @Component
+        class Service:
+            # ClassVar form of a Lazy injection — should still yield a LazyProxy
+            store: ClassVar[Lazy[Storage]]
+
+        container.bind(Storage, FileStorage)
+        container.register(Service)
+
+        svc = container.get(Service)
+
+        # Must be a LazyProxy — deferred, cached on first .get() call
+        assert isinstance(svc.store, LazyProxy)
+        assert isinstance(svc.store.get(), FileStorage)
+
+    def test_classvar_inject_injects_instance(self, container: DIContainer) -> None:
+        """ClassVar[Inject[T]] must resolve and inject the concrete instance."""
+
+        @Component
+        class Service:
+            # ClassVar form of a plain Inject — should still resolve eagerly
+            store: ClassVar[Inject[Storage]]
+
+        container.bind(Storage, FileStorage)
+        container.register(Service)
+
+        svc = container.get(Service)
+
+        assert isinstance(svc.store, FileStorage)

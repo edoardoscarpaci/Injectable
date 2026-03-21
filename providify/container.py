@@ -41,6 +41,7 @@ from .type import (
     LiveProxy,
     _has_providify_metadata,
     _providify,
+    _unwrap_classvar,
 )
 from .utils import _interface_matches, _type_name
 
@@ -1374,9 +1375,14 @@ class DIContainer:
                 # Constructor already handled this — do not overwrite.
                 continue
             if not _has_providify_metadata(hint):
-                # Plain type annotation or ClassVar — not a DI injection target.
+                # Plain type annotation or bare ClassVar — not a DI injection target.
                 continue
-            resolved = self._resolve_hint_sync(hint, name, cls.__name__)
+            # ClassVar[Instance[T]] expands to ClassVar[Annotated[T, InstanceMeta()]].
+            # _resolve_hint_sync expects the Annotated form as its top-level type,
+            # so strip the ClassVar wrapper before resolving.
+            resolved = self._resolve_hint_sync(
+                _unwrap_classvar(hint), name, cls.__name__
+            )
             if resolved is not _UNRESOLVED:
                 setattr(instance, name, resolved)
 
@@ -1421,7 +1427,11 @@ class DIContainer:
                 continue
             if not _has_providify_metadata(hint):
                 continue
-            resolved = await self._resolve_hint_async(hint, name, cls.__name__)
+            # Mirror of _inject_class_vars_sync — strip ClassVar[...] wrapper so
+            # _resolve_hint_async receives a plain Annotated[T, Meta(...)] type.
+            resolved = await self._resolve_hint_async(
+                _unwrap_classvar(hint), name, cls.__name__
+            )
             if resolved is not _UNRESOLVED:
                 setattr(instance, name, resolved)
 
@@ -1920,8 +1930,12 @@ class DIContainer:
             # __init__ not inspectable (rare — C-extension types). Safe empty set.
             init_params = set()
 
+        # _unwrap_classvar strips ClassVar[Annotated[T, Meta()]] → Annotated[T, Meta()].
+        # All downstream callers (_check_scope_violation, _get_dependencies) inspect
+        # hints with `get_origin(hint) is Annotated` — they'd silently skip ClassVar
+        # wrappers without this normalisation step.
         return {
-            name: hint
+            name: _unwrap_classvar(hint)
             for name, hint in hints.items()
             if name not in init_params and _has_providify_metadata(hint)
         }

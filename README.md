@@ -283,7 +283,7 @@ class ReportService:
         self.db = db
 ```
 
-All three injection forms (`Inject[T]`, `Live[T]`, `Lazy[T]`) work as class-level annotations.
+All injection forms (`Inject[T]`, `Live[T]`, `Lazy[T]`, `Instance[T]`) work as class-level annotations.
 For options (`qualifier=`, `priority=`, `optional=`), use `Annotated` + the corresponding meta type:
 
 ```python
@@ -296,6 +296,29 @@ class ReportService:
     logger:   Annotated[RequestLogger,  LiveMeta(qualifier="request")]
     slow_svc: Annotated[HeavyService,   LazyMeta(qualifier="heavy")]
 ```
+
+#### `ClassVar[...]` form
+
+All four injection types also accept the `ClassVar[...]` wrapper, which is useful when
+a type checker or style guide requires class-level attributes to be explicitly typed as
+class variables:
+
+```python
+from typing import ClassVar
+from providify import Instance, Live, Lazy, Inject
+
+@Singleton
+class AlertService:
+    # ClassVar form — treated identically to the plain form by the container
+    emailer:  ClassVar[Instance[Emailer]]
+    logger:   ClassVar[Live[RequestLogger]]
+    config:   ClassVar[Lazy[AppConfig]]
+    storage:  ClassVar[Inject[StorageBackend]]
+```
+
+The container unwraps `ClassVar[X]` to `X` before dispatching, so resolution,
+scope-violation detection, and dependency-graph construction all work identically
+to the plain annotation form.
 
 > **Constructor takes priority** — if the same name appears both as a class-level annotation and as an `__init__` parameter, the constructor value is used and the class-level annotation is skipped.
 
@@ -848,6 +871,8 @@ making them safe for the "zero or more" pattern.
 inside a `@Singleton`. Because resolution is deferred to call time, the proxy
 naturally fetches the current request's instance on each `.get()` call without
 requiring an explicit `Live[T]` wrapper.
+
+This exemption applies equally to the `ClassVar[Instance[T]]` form.
 
 ```python
 @Singleton
