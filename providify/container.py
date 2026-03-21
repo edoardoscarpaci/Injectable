@@ -33,6 +33,8 @@ from .scanner import ContainerScanner, DefaultContainerScanner
 from .scope import ScopeContext
 from .type import (
     InjectMeta,
+    InstanceMeta,
+    InstanceProxy,
     LazyMeta,
     LazyProxy,
     LiveMeta,
@@ -657,6 +659,53 @@ class DIContainer:
             and (priority is None or b.priority == priority)
         ]
 
+    def is_resolvable(
+        self,
+        cls: type,
+        *,
+        qualifier: str | None = None,
+        priority: int | None = None,
+    ) -> bool:
+        """Return True if at least one registered binding matches *cls*.
+
+        A side-effect-free predicate — no instances are created or cached.
+        Intended as the public counterpart to the private ``_filter()`` helper,
+        so that :class:`~providify.type.InstanceProxy` and user code can guard
+        optional dependencies without coupling to internal APIs.
+
+        Args:
+            cls:       The interface or concrete type to check.
+            qualifier: If given, only bindings registered with this qualifier
+                       are considered. ``None`` matches any qualifier.
+            priority:  If given, only bindings with this exact priority are
+                       considered. ``None`` accepts any priority.
+
+        Returns:
+            True  — at least one binding satisfies all conditions; calling
+                    ``get(cls, qualifier=qualifier, priority=priority)``
+                    will not raise ``LookupError``.
+            False — no binding matches; ``get()`` would raise.
+
+        Thread safety:  ⚠️ Conditional — safe only if ``_bindings`` is not
+                        mutated concurrently.  See class-level safety note.
+        Async safety:   ✅ No await points; no shared mutable state written.
+
+        Edge cases:
+            - No bindings registered at all → False.
+            - qualifier narrows to zero     → False.
+            - Called before first get()     → does NOT trigger validate_bindings().
+            - Results are not cached — re-evaluated on every call, so a new
+              binding added between two calls will be reflected immediately. ✅
+
+        Example:
+            if container.is_resolvable(Notifier, qualifier="sms"):
+                svc = container.get(Notifier, qualifier="sms")
+        """
+        # DESIGN: delegate to _filter() which is the single source of truth for
+        # binding matching logic.  _filter() is a pure list comprehension with no
+        # side effects — calling it here does not trigger validation or instantiation.
+        return bool(self._filter(cls, qualifier=qualifier, priority=priority))
+
     def _filter_singleton(
         self,
         qualifier: str | None = None,
@@ -1117,11 +1166,14 @@ class DIContainer:
         if get_origin(hint) is Annotated:
             args = get_args(hint)
             base_type = args[0]
-            # Priority order: LiveMeta → LazyMeta → InjectMeta.
+            # Priority order: LiveMeta → LazyMeta → InstanceMeta → InjectMeta.
             # A hint can only carry one _providify marker at a time, but we
             # check in this order so the most specific proxy type wins.
             live_meta = next((a for a in args[1:] if isinstance(a, LiveMeta)), None)
             lazy_meta = next((a for a in args[1:] if isinstance(a, LazyMeta)), None)
+            instance_meta = next(
+                (a for a in args[1:] if isinstance(a, InstanceMeta)), None
+            )
             inject_meta = next((a for a in args[1:] if isinstance(a, InjectMeta)), None)
 
             if live_meta:
@@ -1143,6 +1195,13 @@ class DIContainer:
                     qualifier=lazy_meta.qualifier,
                     priority=lazy_meta.priority,
                 )
+            elif instance_meta:
+                # Return an InstanceProxy — gives the owner full control: .get() for
+                # a single best-priority instance, .get_all() for all matches,
+                # .resolvable() for an optional guard.  No resolution happens here.
+                # Qualifier/priority are NOT baked in at construction — the caller
+                # passes them at call time on get() / get_all() / resolvable().
+                return InstanceProxy(self, base_type)
             elif inject_meta and inject_meta.all:
                 inner = (
                     get_args(base_type)[0]
@@ -1194,9 +1253,12 @@ class DIContainer:
         if get_origin(hint) is Annotated:
             args = get_args(hint)
             base_type = args[0]
-            # Mirror of _resolve_hint_sync — same priority order: Live → Lazy → Inject.
+            # Mirror of _resolve_hint_sync — same priority order: Live → Lazy → Instance → Inject.
             live_meta = next((a for a in args[1:] if isinstance(a, LiveMeta)), None)
             lazy_meta = next((a for a in args[1:] if isinstance(a, LazyMeta)), None)
+            instance_meta = next(
+                (a for a in args[1:] if isinstance(a, InstanceMeta)), None
+            )
             inject_meta = next((a for a in args[1:] if isinstance(a, InjectMeta)), None)
 
             if live_meta:
@@ -1215,6 +1277,10 @@ class DIContainer:
                     qualifier=lazy_meta.qualifier,
                     priority=lazy_meta.priority,
                 )
+            elif instance_meta:
+                # Proxy creation is always sync — .aget() / .aget_all() are async.
+                # No qualifier/priority baked in — caller supplies them at call time.
+                return InstanceProxy(self, base_type)
             elif inject_meta and inject_meta.all:
                 inner = (
                     get_args(base_type)[0]
@@ -1936,10 +2002,12 @@ class DIContainer:
 
                 if dep.scope in (Scope.REQUEST, Scope.SESSION):
                     # REQUEST and SESSION scoped deps must always be wrapped in Live[T]
-                    # when held by a longer-lived component.  Inject[T] and Lazy[T]
-                    # both capture one instance at construction time — that instance
-                    # becomes stale the moment the scope boundary rotates.
-                    if not isinstance(inject_marker, LiveMeta):
+                    # or Instance[T] when held by a longer-lived component.
+                    # Inject[T] and Lazy[T] both capture one instance at construction
+                    # time — that instance becomes stale the moment the scope boundary
+                    # rotates.  Instance[T] re-resolves on every .get() call (like
+                    # Live[T]) so it is also safe here.
+                    if not isinstance(inject_marker, (LiveMeta, InstanceMeta)):
                         live_violations.append(
                             LiveInjectionViolation(
                                 binding=(binding.implementation, binding.scope),
@@ -1948,14 +2016,17 @@ class DIContainer:
                             )
                         )
                 else:
-                    # Non-scoped leak (e.g. SINGLETON holding a DEPENDENT dep) —
-                    # kept as a regular ScopeLeak, not a Live injection error.
-                    leaks.append(
-                        ScopeLeak(
-                            binding=(binding.implementation, binding.scope),
-                            reference=(dep.interface, dep.scope),
+                    # Non-scoped leak (e.g. SINGLETON holding a DEPENDENT dep).
+                    # Instance[T] is exempt: the proxy defers resolution to .get()
+                    # call time — the SINGLETON stores the proxy, never a resolved
+                    # instance, so no stale reference is captured across scope boundaries.
+                    if not isinstance(inject_marker, InstanceMeta):
+                        leaks.append(
+                            ScopeLeak(
+                                binding=(binding.implementation, binding.scope),
+                                reference=(dep.interface, dep.scope),
+                            )
                         )
-                    )
 
         if live_violations:
             raise LiveInjectionRequiredError(violations=live_violations)

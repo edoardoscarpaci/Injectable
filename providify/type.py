@@ -661,6 +661,364 @@ else:
     Live = _LiveAlias()
 
 
+# ─────────────────────────────────────────────────────────────────
+#  Instance[T] — Jakarta CDI-inspired programmatic lookup handle
+#
+#  DESIGN: Instance[T] is the "programmatic injection" pattern from
+#  Jakarta CDI (jakarta.enterprise.inject.Instance<T>).
+#
+#  Compared to the other injection types:
+#    Inject[T]          — eager, single, raises if absent.
+#    InjectInstances[T] — eager, all, resolved once at construction.
+#    Lazy[T]            — deferred single, cached on first access.
+#    Live[T]            — always-fresh single, never cached.
+#    Instance[T]        — deferred handle; caller chooses get() or
+#                         get_all() at call time; exposes resolvable()
+#                         for optional-style guards.
+#
+#  Key differences from Inject/InjectInstances:
+#    ✅ Single object to inject; caller decides single vs. all.
+#    ✅ resolvable() lets callers guard optional dependencies without
+#       needing Inject[T, optional=True] or a try/except block.
+#    ✅ get_all() returns [] instead of raising on empty — natural
+#       for optional multi-binding scenarios.
+#    ❌ One extra method call vs. plain Inject[T] — small overhead.
+#
+#  DESIGN: InstanceProxy stores the container as Any at runtime to avoid
+#  a circular import — same pattern as LazyProxy and LiveProxy.
+# ─────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class InstanceMeta(_providify):
+    """Marker placed inside Annotated[T, InstanceMeta()] by the Instance alias.
+
+    Detected by the container's _resolve_hint_sync/_async methods to
+    construct an InstanceProxy instead of resolving T immediately.
+
+    Unlike InjectMeta, the proxy is handed to the owner un-resolved;
+    the owner calls .get() / .get_all() / .resolvable() at call time,
+    giving full control over single-vs-all and optional-vs-required semantics.
+
+    DESIGN: InstanceMeta carries NO qualifier or priority — filtering is
+    intentionally deferred to call time on the proxy methods.  This keeps
+    the annotation site clean and lets callers use the same proxy handle
+    with different filters in different code paths (e.g. same Instance[T]
+    used once with qualifier="sms" and once with qualifier="email").
+
+    Tradeoffs:
+        ✅ One proxy handles multiple qualifier / priority combinations.
+        ✅ Annotation stays minimal — no Annotated[T, InstanceMeta(qualifier=...)] needed.
+        ❌ Qualifier / priority are not visible at the injection site — callers
+           must remember to pass them at the call site (or intend None = any).
+
+    Alternative considered: storing qualifier/priority on InstanceMeta like
+    InjectMeta does — rejected because it locks every call through the proxy
+    to one fixed filter, losing the flexibility advantage over plain Inject[T].
+    """
+
+    # Empty marker — no fields.  The dataclass decorator still generates
+    # __init__, __eq__, __repr__, and __hash__ automatically.
+    pass
+
+
+class InstanceProxy(Generic[T]):
+    """Jakarta CDI-inspired programmatic injection handle for type T.
+
+    A single proxy object that gives the owner full control over how and
+    when to resolve dependencies.  Unlike :class:`Inject` (eager, single)
+    or :class:`InjectInstances` (eager, all), ``InstanceProxy`` is:
+
+    - **Deferred** — no resolution occurs at construction time.
+    - **Dual-mode** — ``.get()`` for a single best-priority instance,
+      ``.get_all()`` for the full ranked list.
+    - **Optional-friendly** — ``.resolvable()`` returns ``bool`` without
+      side-effects, so callers can guard optional deps without try/except.
+
+    Thread safety:  ✅ Safe — no mutable state on the proxy itself.
+                    Each call delegates to the container; thread-safety
+                    guarantees are the same as for ``container.get()``.
+    Async safety:   ✅ Safe — ``.aget()`` / ``.aget_all()`` are coroutines
+                    with no shared state. Each call is an independent
+                    delegation into the container's async path.
+
+    Edge cases:
+        - T not registered            → .get() raises LookupError.
+        - T not registered            → .get_all() returns [] (no raise).
+        - T is async-only             → .get() raises RuntimeError; use .aget().
+        - T is REQUEST/SESSION-scoped → .get() raises if no scope is active.
+        - qualifier narrows to zero   → .get() raises; .resolvable() → False.
+        - Multiple bindings, no prio  → .get() returns highest-priority match.
+        - resolvable() re-evaluates every call — not cached; safe to call
+          repeatedly even after new bindings are added.
+
+    Usage:
+        @Component
+        class AlertService:
+            def __init__(self, notifiers: Instance[Notifier]) -> None:
+                self._notifiers = notifiers
+
+            def notify(self, msg: str) -> None:
+                # Optional single dependency — guard before calling
+                if self._notifiers.resolvable():
+                    self._notifiers.get().send(msg)
+
+            def broadcast(self, msg: str) -> None:
+                # All registered notifiers, sorted by priority
+                for n in self._notifiers.get_all():
+                    n.send(msg)
+    """
+
+    def __init__(
+        self,
+        container: DIContainer,
+        tp: type[T],
+    ) -> None:
+        # Stored as Any at runtime — TYPE_CHECKING guard prevents circular import.
+        # Same pattern as LazyProxy and LiveProxy; container API is stable and narrow.
+        self._container: Any = container
+        self._tp = tp
+        # DESIGN: no qualifier/priority stored on the proxy — all filtering is
+        # deferred to call time on get() / get_all() / resolvable() so a single
+        # InstanceProxy handle can serve multiple filter combinations.
+
+    def get(
+        self,
+        *,
+        qualifier: str | None = None,
+        priority: int | None = None,
+    ) -> T:
+        """Resolve and return the single best-priority matching instance synchronously.
+
+        Delegates to ``container.get(T)`` with the caller-supplied qualifier and priority.
+        Unlike ``.get_all()``, this method raises if no binding is found — use
+        ``.resolvable()`` with the same qualifier/priority first if the dep is optional.
+
+        Args:
+            qualifier: Named qualifier to narrow the candidates — only bindings
+                       registered with this qualifier are considered. ``None`` matches
+                       any qualifier (default).
+            priority:  Exact priority to match. ``None`` means the highest-priority
+                       candidate wins (default).
+
+        Returns:
+            The highest-priority resolved instance of T that satisfies the filter.
+
+        Raises:
+            LookupError:   If no binding matches T with the given qualifier/priority.
+            RuntimeError:  If T's provider is async — use ``.aget()`` instead.
+            RuntimeError:  If T is REQUEST/SESSION-scoped and no scope is active.
+
+        Example:
+            svc = proxy.get()
+            svc = proxy.get(qualifier="email")
+            svc = proxy.get(qualifier="sms", priority=10)
+
+        Edge cases:
+            - No binding registered → raises LookupError immediately.
+            - qualifier narrows to zero → raises LookupError.
+            - Multiple bindings, qualifier=None → highest priority wins.
+        """
+        return self._container.get(
+            self._tp,
+            qualifier=qualifier,
+            priority=priority,
+        )
+
+    async def aget(
+        self,
+        *,
+        qualifier: str | None = None,
+        priority: int | None = None,
+    ) -> T:
+        """Resolve and return the single best-priority matching instance asynchronously.
+
+        Async mirror of ``.get()``.  Handles both sync and async providers —
+        the container decides whether to await.
+
+        Args:
+            qualifier: Named qualifier to narrow the candidates. ``None`` matches any.
+            priority:  Exact priority to match. ``None`` means best priority wins.
+
+        Returns:
+            The highest-priority resolved instance of T that satisfies the filter.
+
+        Raises:
+            LookupError:  If no binding matches T with the given qualifier/priority.
+            RuntimeError: If T is REQUEST/SESSION-scoped and no scope is active.
+
+        Edge cases:
+            - No binding → raises LookupError immediately.
+        """
+        return await self._container.aget(
+            self._tp,
+            qualifier=qualifier,
+            priority=priority,
+        )
+
+    def get_all(
+        self,
+        *,
+        qualifier: str | None = None,
+    ) -> list[T]:
+        """Resolve all matching instances synchronously, sorted by ascending priority.
+
+        Unlike ``container.get_all()``, this method returns an empty list instead
+        of raising when no bindings are registered — safe for optional multi-dep scenarios.
+
+        Args:
+            qualifier: Named qualifier to narrow candidates. ``None`` returns all
+                       bindings for T regardless of qualifier (default).
+
+        Returns:
+            A list of resolved instances, sorted by ascending priority (lowest first).
+            Returns ``[]`` if no binding matches — never raises LookupError.
+
+        Raises:
+            RuntimeError: If any matching provider is async — use ``.aget_all()`` instead.
+
+        Edge cases:
+            - No binding registered → returns [] without raising
+              (⚠️ differs from container.get_all() which raises LookupError).
+            - qualifier narrows to zero → returns [].
+            - DEPENDENT scope → each binding yields a new instance on every call.
+        """
+        try:
+            return self._container.get_all(self._tp, qualifier=qualifier)
+        except LookupError:
+            # DESIGN: return [] instead of propagating — the whole point of
+            # Instance[T].get_all() is to handle the "zero or more" case
+            # without requiring a try/except at the call site.
+            return []
+
+    async def aget_all(
+        self,
+        *,
+        qualifier: str | None = None,
+    ) -> list[T]:
+        """Resolve all matching instances asynchronously, sorted by ascending priority.
+
+        Async mirror of ``.get_all()``. Returns an empty list when no bindings match.
+
+        Args:
+            qualifier: Named qualifier to narrow candidates. ``None`` returns all
+                       bindings for T regardless of qualifier (default).
+
+        Returns:
+            A list of resolved instances, sorted by ascending priority (lowest first).
+            Returns ``[]`` if no binding matches — never raises LookupError.
+
+        Edge cases:
+            - No binding → returns [] without raising.
+        """
+        try:
+            return await self._container.aget_all(self._tp, qualifier=qualifier)
+        except LookupError:
+            # Same design as get_all() — swallow to support optional multi-dep pattern.
+            return []
+
+    def resolvable(
+        self,
+        *,
+        qualifier: str | None = None,
+        priority: int | None = None,
+    ) -> bool:
+        """Return True if at least one binding matches — safe to call ``.get()``.
+
+        Performs a side-effect-free check via ``container.is_resolvable()``;
+        no instances are created or cached.  Analogous to Jakarta CDI's
+        ``Instance.isResolvable()`` (adapted: Providify uses priority to break ties,
+        so "resolvable" means "at least one candidate exists", not "exactly one").
+
+        Pass the same qualifier/priority you intend to use in the subsequent
+        ``.get()`` call so the guard matches the actual resolution filter.
+
+        Args:
+            qualifier: Named qualifier to narrow the check. ``None`` matches any.
+            priority:  Exact priority to match. ``None`` accepts any priority.
+
+        Returns:
+            True  — one or more bindings match; ``.get(qualifier=..., priority=...)``
+                    will not raise LookupError.
+            False — no bindings match; ``.get()`` with the same filter would raise.
+
+        Thread safety:  ✅ Safe — reads only; no writes to container state.
+
+        Edge cases:
+            - Called before any binding is registered → False.
+            - Called after container.reset() → False (registry cleared).
+            - qualifier/priority narrow to zero → False.
+            - Re-evaluated on every call — not cached. ✅ safe after dynamic binding.
+
+        Example:
+            if proxy.resolvable(qualifier="email"):
+                svc = proxy.get(qualifier="email")
+        """
+        # DESIGN: delegate to container.is_resolvable() — a public method — rather
+        # than calling _filter() directly.  This keeps InstanceProxy on the public
+        # API surface of the container and avoids coupling to private internals.
+        return self._container.is_resolvable(
+            self._tp,
+            qualifier=qualifier,
+            priority=priority,
+        )
+
+    def __repr__(self) -> str:
+        # No qualifier/priority to show — filtering is call-time, not construction-time.
+        return f"InstanceProxy[{self._tp.__name__}](unresolved)"
+
+
+class _InstanceAlias:
+    """Sugar over Annotated[T, InstanceMeta(...)].
+
+    Three equivalent forms — choose based on what options you need:
+
+        # 1. Subscript — no options, cleanest syntax, Pylance shows InstanceProxy[T]
+        notifiers: Instance[Notifier]
+
+        # 2. Call — options available, but requires # type: ignore[valid-type]
+        #    because a call expression is not valid in annotation position.
+        notifiers: Instance(Notifier, qualifier="sms")  # type: ignore[valid-type]
+
+        # 3. Annotated — recommended when qualifier / priority are needed.
+        #    Fully valid Python; Pylance hover shows bare InstanceProxy[Notifier].
+        from providify import InstanceMeta
+        from typing import Annotated
+        notifiers: Annotated[Notifier, InstanceMeta(qualifier="sms")]
+
+    Both forms expand to Annotated[T, InstanceMeta(...)], which the container
+    detects in _resolve_hint_sync/_async and converts to an InstanceProxy.
+
+    Thread safety:  ✅ Safe — stateless singleton, no mutable state.
+    Async safety:   ✅ Safe — stateless singleton.
+    """
+
+    def __getitem__(self, tp: Any) -> Any:
+        # Subscript form — no options, plain instance handle injection
+        return Annotated[tp, InstanceMeta()]
+
+    def __call__(self, tp: Any) -> Any:
+        # Call form — equivalent to subscript form since InstanceMeta has no options.
+        # Kept for API consistency with Inject / Lazy / Live call forms.
+        return Annotated[tp, InstanceMeta()]
+
+
+if TYPE_CHECKING:
+    # DESIGN: Instance is a TypeAlias for InstanceProxy under TYPE_CHECKING.
+    # InstanceProxy is a proper Generic[T] class — aliasing to it gives the
+    # type checker full knowledge:
+    #   notifiers: Instance[Notifier]  →  notifiers: InstanceProxy[Notifier]
+    #   notifiers.get()                →  returns Notifier   ✅
+    #   notifiers.get_all()            →  returns list[Notifier]   ✅
+    # This is simpler and more correct than a custom stub class.
+    Instance = InstanceProxy
+else:
+    # DESIGN: module-level singleton — same pattern as Lazy / Live / Inject.
+    # Users import Instance and use it as a type alias factory; they never
+    # instantiate _InstanceAlias directly.
+    Instance = _InstanceAlias()
+
+
 def _has_providify_metadata(hint: Any) -> bool:
     """
     Return True if a type hint contains any _providify metadata in its Annotated args.

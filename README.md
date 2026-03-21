@@ -390,23 +390,27 @@ token: Annotated[JsonWebToken, LiveMeta(qualifier="bearer")]
 
 ```python
 # Sync request scope
-with container.scope_context.request():
+with container.request():
     svc = container.get(RequestLogger)   # same instance within this block
 
 # Async request scope
-async with container.scope_context.arequest():
+async with container.arequest():
     svc = await container.aget(RequestLogger)
 
 # Session scope — provide a stable ID to share state across multiple requests
-with container.scope_context.session("user-abc") as sid:
+with container.session("user-abc"):
     profile = container.get(UserProfile)
 
 # Resume the same session later
-with container.scope_context.session("user-abc"):
+with container.session("user-abc"):
     profile = container.get(UserProfile)   # same cached instance
 
 # Destroy a session on logout
-container.scope_context.invalidate_session("user-abc")
+container.invalidate_session("user-abc")
+
+# scope_context property — still available for advanced use or direct cache access
+with container.scope_context.request():   # equivalent to container.request()
+    ...
 ```
 
 > Resolving a `@RequestScoped` or `@SessionScoped` binding outside an active context
@@ -779,6 +783,7 @@ Tests are organised by feature — one file per subsystem:
 | `test_inject.py` | `Inject[T]`, `InjectInstances[T]`, `optional=True/False`, class-level attribute injection |
 | `test_lazy.py` | `LazyProxy` unit tests, `Lazy[T]` injection, circular-via-lazy |
 | `test_live.py` | `LiveProxy` unit tests, `Live[T]` injection, always-fresh resolution |
+| `test_instance.py` | `InstanceProxy` unit tests, `Instance[T]` injection, `is_resolvable()`, scope-safety, async |
 | `test_lifecycle.py` | `@PostConstruct`, `@PreDestroy`, `shutdown`, `ashutdown` |
 | `test_async.py` | `aget`, `aget_all`, async providers, async context manager |
 | `test_configuration.py` | `@Configuration`, `install()`, `ainstall()`, Spring-style injection |
@@ -793,11 +798,123 @@ Tests are organised by feature — one file per subsystem:
 
 ---
 
+## Instance[T] — programmatic lookup handle
+
+`Instance[T]` is the Jakarta CDI-inspired alternative when you need full
+programmatic control over resolution at call time. Unlike `Inject[T]` (resolves
+once, eager) or `InjectInstances[T]` (resolves all, eager), an `Instance[T]`
+injects an `InstanceProxy` that defers every lookup to the call site — and
+accepts qualifier / priority as **call-time arguments**, not annotation-time
+metadata.
+
+```python
+from providify import Instance
+
+@Singleton
+class NotificationRouter:
+    def __init__(self, senders: Instance[Sender]) -> None:
+        self._senders = senders   # InstanceProxy — nothing resolved yet
+
+    def route(self, msg: str, channel: str) -> None:
+        # Qualifier chosen at runtime — same proxy, different filter each call
+        sender = self._senders.get(qualifier=channel)
+        sender.send(msg)
+
+    def broadcast(self, msg: str) -> None:
+        for sender in self._senders.get_all():
+            sender.send(msg)
+
+    def has_channel(self, channel: str) -> bool:
+        # Side-effect-free check — never creates an instance
+        return self._senders.resolvable(qualifier=channel)
+```
+
+### InstanceProxy methods
+
+| Method | Description |
+|--------|-------------|
+| `.get(qualifier=None, priority=None)` | Resolve highest-priority match (sync) |
+| `.get_all(qualifier=None)` | Resolve all matches sorted by priority (sync) |
+| `.aget(qualifier=None, priority=None)` | Same as `.get()`, async |
+| `.aget_all(qualifier=None)` | Same as `.get_all()`, async |
+| `.resolvable(qualifier=None, priority=None)` | `True` if at least one binding matches — no instance created |
+
+`get_all()` and `aget_all()` return `[]` (never raise) when no bindings match,
+making them safe for the "zero or more" pattern.
+
+### Scope safety
+
+`Instance[T]` **always passes scope validation** — even `Instance[RequestScoped]`
+inside a `@Singleton`. Because resolution is deferred to call time, the proxy
+naturally fetches the current request's instance on each `.get()` call without
+requiring an explicit `Live[T]` wrapper.
+
+```python
+@Singleton
+class AuthGateway:
+    # ✅ No LiveInjectionRequiredError — Instance[T] is inherently scope-safe
+    def __init__(self, token: Instance[JwtToken]) -> None:
+        self._token = token
+
+    def verify(self) -> bool:
+        return self._token.get().is_valid()   # re-resolves per request automatically
+```
+
+### `Lazy[T]` vs `Live[T]` vs `Instance[T]`
+
+| | `Lazy[T]` | `Live[T]` | `Instance[T]` |
+|---|---|---|---|
+| Resolution time | First `.get()` call | Every `.get()` call | Every `.get()` call |
+| Caches result | ✅ Yes | ❌ No | ❌ No |
+| Qualifier at call time | ❌ Fixed at annotation | ❌ Fixed at annotation | ✅ Chosen per call |
+| Breaks circular deps | ✅ Yes | ❌ No | ❌ No |
+| Scope-safe in singletons | ❌ Stale after first access | ✅ Yes | ✅ Yes |
+| `resolvable()` check | ❌ No | ❌ No | ✅ Yes |
+
+---
+
+## container.is_resolvable()
+
+Check whether a type can be resolved **without creating any instances**:
+
+```python
+if container.is_resolvable(Notifier, qualifier="sms"):
+    sms = container.get(Notifier, qualifier="sms")
+
+# Reflects live binding state — re-evaluated on every call
+container.bind(Notifier, SmsNotifier)
+assert container.is_resolvable(Notifier) is True
+```
+
+---
+
+## container.set_scoped()
+
+Register a pre-built instance into the **currently active** scope cache.
+Useful when an instance is created outside the container (e.g. deserialized
+from a session cookie) and should be returned for subsequent `get()` calls
+within the same scope block.
+
+```python
+with container.request():
+    token = JwtToken.decode(raw_header)
+    container.set_scoped(JwtToken, token)   # register into request cache
+
+    # All code inside this block that resolves JwtToken gets this instance
+    svc = container.get(AuthService)        # AuthService.token == token ✅
+```
+
+- Calling `set_scoped()` outside an active scope raises `RuntimeError` immediately.
+- Calling it twice with the same type overwrites the cache entry.
+- Works inside both `request()` and `session()` blocks.
+
+---
+
 ## Scope reference
 
 | Decorator | Lifetime |
 |-----------|----------|
 | `@Component` | New instance on every `get()` |
 | `@Singleton` | One instance per container — shared for the container's lifetime |
-| `@RequestScoped` | One instance per `scope_context.request()` block |
-| `@SessionScoped` | One instance per `scope_context.session(id)` — survives across requests |
+| `@RequestScoped` | One instance per `container.request()` block |
+| `@SessionScoped` | One instance per `container.session(id)` — survives across requests |

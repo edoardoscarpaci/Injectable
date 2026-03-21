@@ -22,8 +22,10 @@ __all__ = [
     "InjectInstances",
     "Lazy",
     "Live",
+    "Instance",
     "LiveProxy",
     "LazyProxy",
+    "InstanceProxy",
     # Metadata — use with Annotated[T, XxxMeta(...)] for fully type-safe
     # annotations when qualifier / priority / optional options are needed.
     # e.g.  store: Annotated[Storage, InjectMeta(qualifier="cloud")]
@@ -31,6 +33,7 @@ __all__ = [
     "InjectMeta",
     "LazyMeta",
     "LiveMeta",
+    "InstanceMeta",
 ]
 from .container import DIContainer, ScopeContext
 from .decorator.scope import (
@@ -49,11 +52,14 @@ from .type import (
     InjectInstances,
     Lazy,
     Live,
+    Instance,
     LiveProxy,
     LazyProxy,
+    InstanceProxy,
     InjectMeta,
     LazyMeta,
     LiveMeta,
+    InstanceMeta,
 )
 
 import logging
